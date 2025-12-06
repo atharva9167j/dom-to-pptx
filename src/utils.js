@@ -1,30 +1,41 @@
 // src/utils.js
 
+/**
+ * Checks if any parent element has overflow: hidden which would clip this element
+ * @param {HTMLElement} node - The DOM node to check
+ * @returns {boolean} - True if a parent has overflow-hidden or overflow-clip
+ */
+export function isClippedByParent(node) {
+  let parent = node.parentElement;
+  while (parent && parent !== document.body) {
+    const style = window.getComputedStyle(parent);
+    const overflow = style.overflow;
+    if (overflow === 'hidden' || overflow === 'clip') {
+      return true;
+    }
+    parent = parent.parentElement;
+  }
+  return false;
+}
+
 // Helper to save gradient text
 export function getGradientFallbackColor(bgImage) {
   if (!bgImage) return null;
-  // Extract first hex or rgb color
-  // linear-gradient(to right, #4f46e5, ...) -> #4f46e5
   const hexMatch = bgImage.match(/#(?:[0-9a-fA-F]{3}){1,2}/);
   if (hexMatch) return hexMatch[0];
-
   const rgbMatch = bgImage.match(/rgba?\(.*?\)/);
   if (rgbMatch) return rgbMatch[0];
-
   return null;
 }
 
 function mapDashType(style) {
   if (style === 'dashed') return 'dash';
   if (style === 'dotted') return 'dot';
-  // PPTX also supports 'lgDash', 'dashDot', 'lgDashDot', 'lgDashDotDot'
-  // but we'll stick to basics for now.
   return 'solid';
 }
 
 /**
  * Analyzes computed border styles and determines the rendering strategy.
- * @returns {{type: 'uniform' | 'composite' | 'none', ...}}
  */
 export function getBorderInfo(style, scale) {
   const top = {
@@ -67,21 +78,16 @@ export function getBorderInfo(style, scale) {
     return {
       type: 'uniform',
       options: {
-        width: top.width * 0.75 * scale, // Convert to points and scale
+        width: top.width * 0.75 * scale,
         color: top.color,
+        transparency: (1 - parseColor(style.borderTopColor).opacity) * 100,
         dashType: mapDashType(top.style),
       },
     };
   } else {
-    // Borders are different, must render as separate shapes
     return {
       type: 'composite',
-      sides: {
-        top,
-        right,
-        bottom,
-        left,
-      },
+      sides: { top, right, bottom, left },
     };
   }
 }
@@ -91,24 +97,18 @@ export function getBorderInfo(style, scale) {
  */
 export function generateCompositeBorderSVG(w, h, radius, sides) {
   radius = radius / 2; // Adjust for SVG rendering
-
   const clipId = 'clip_' + Math.random().toString(36).substr(2, 9);
-
   let borderRects = '';
 
-  // TOP
   if (sides.top.width > 0 && sides.top.color) {
     borderRects += `<rect x="0" y="0" width="${w}" height="${sides.top.width}" fill="#${sides.top.color}" />`;
   }
-  // RIGHT
   if (sides.right.width > 0 && sides.right.color) {
     borderRects += `<rect x="${w - sides.right.width}" y="0" width="${sides.right.width}" height="${h}" fill="#${sides.right.color}" />`;
   }
-  // BOTTOM
   if (sides.bottom.width > 0 && sides.bottom.color) {
     borderRects += `<rect x="0" y="${h - sides.bottom.width}" width="${w}" height="${sides.bottom.width}" fill="#${sides.bottom.color}" />`;
   }
-  // LEFT
   if (sides.left.width > 0 && sides.left.color) {
     borderRects += `<rect x="0" y="0" width="${sides.left.width}" height="${h}" fill="#${sides.left.color}" />`;
   }
@@ -129,10 +129,44 @@ export function generateCompositeBorderSVG(w, h, radius, sides) {
 }
 
 /**
- * Parses a CSS color string (hex, rgb, rgba) into a hex code and opacity.
- * @param {string} str - The CSS color string.
- * @returns {{hex: string | null, opacity: number}} - Object with hex color (without #) and opacity (0-1).
+ * Generates an SVG data URL for a solid shape with non-uniform corner radii.
  */
+export function generateCustomShapeSVG(w, h, color, opacity, radii) {
+  let { tl, tr, br, bl } = radii;
+  
+  // Clamp radii using CSS spec logic (avoid overlap)
+  const factor = Math.min(
+    (w / (tl + tr)) || Infinity,
+    (h / (tr + br)) || Infinity,
+    (w / (br + bl)) || Infinity,
+    (h / (bl + tl)) || Infinity
+  );
+  
+  if (factor < 1) {
+    tl *= factor; tr *= factor; br *= factor; bl *= factor;
+  }
+
+  const path = `
+    M ${tl} 0
+    L ${w - tr} 0
+    A ${tr} ${tr} 0 0 1 ${w} ${tr}
+    L ${w} ${h - br}
+    A ${br} ${br} 0 0 1 ${w - br} ${h}
+    L ${bl} ${h}
+    A ${bl} ${bl} 0 0 1 0 ${h - bl}
+    L 0 ${tl}
+    A ${tl} ${tl} 0 0 1 ${tl} 0
+    Z
+  `;
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <path d="${path}" fill="#${color}" fill-opacity="${opacity}" />
+    </svg>`;
+
+  return 'data:image/svg+xml;base64,' + btoa(svg);
+}
+
 export function parseColor(str) {
   if (!str || str === 'transparent' || str.startsWith('rgba(0, 0, 0, 0)')) {
     return { hex: null, opacity: 0 };
@@ -140,10 +174,7 @@ export function parseColor(str) {
   if (str.startsWith('#')) {
     let hex = str.slice(1);
     if (hex.length === 3)
-      hex = hex
-        .split('')
-        .map((c) => c + c)
-        .join('');
+      hex = hex.split('').map((c) => c + c).join('');
     return { hex: hex.toUpperCase(), opacity: 1 };
   }
   const match = str.match(/[\d.]+/g);
@@ -158,12 +189,6 @@ export function parseColor(str) {
   return { hex: null, opacity: 0 };
 }
 
-/**
- * Calculates padding values from computed CSS styles, scaled to inches.
- * @param {CSSStyleDeclaration} style - The computed CSS style of the element.
- * @param {number} scale - The scaling factor for converting pixels to inches.
- * @returns {number[]} - An array of padding values [top, right, bottom, left] in inches.
- */
 export function getPadding(style, scale) {
   const pxToInch = 1 / 96;
   return [
@@ -174,12 +199,6 @@ export function getPadding(style, scale) {
   ];
 }
 
-/**
- * Extracts the blur radius for soft edges from a CSS filter string.
- * @param {string} filterStr - The CSS filter string.
- * @param {number} scale - The scaling factor.
- * @returns {number | null} - The blur radius in points, or null if no blur is found.
- */
 export function getSoftEdges(filterStr, scale) {
   if (!filterStr || filterStr === 'none') return null;
   const match = filterStr.match(/blur\(([\d.]+)px\)/);
@@ -187,13 +206,6 @@ export function getSoftEdges(filterStr, scale) {
   return null;
 }
 
-/**
- * Generates text style options for PPTX from computed CSS styles.
- * Handles font properties, color, and text transformations.
- * @param {CSSStyleDeclaration} style - The computed CSS style of the element.
- * @param {number} scale - The scaling factor for converting pixels to inches.
- * @returns {PptxGenJS.TextOptions} - PPTX text style object.
- */
 export function getTextStyle(style, scale) {
   let colorObj = parseColor(style.color);
 
@@ -215,26 +227,43 @@ export function getTextStyle(style, scale) {
 
 /**
  * Determines if a given DOM node is primarily a text container.
- * Checks if the node has text content and if its children are all inline elements.
- * @param {HTMLElement} node - The DOM node to check.
- * @returns {boolean} - True if the node is considered a text container, false otherwise.
  */
 export function isTextContainer(node) {
   const hasText = node.textContent.trim().length > 0;
   if (!hasText) return false;
+
   const children = Array.from(node.children);
   if (children.length === 0) return true;
-  const isInline = (el) =>
-    window.getComputedStyle(el).display.includes('inline') ||
-    ['SPAN', 'B', 'STRONG', 'EM', 'I', 'A', 'SMALL'].includes(el.tagName);
-  return children.every(isInline);
+
+  // Check if children are purely inline text formatting or visual shapes
+  const isSafeInline = (el) => {
+    const style = window.getComputedStyle(el);
+    const display = style.display;
+    
+    // If it's a standard inline element
+    const isInlineTag = ['SPAN', 'B', 'STRONG', 'EM', 'I', 'A', 'SMALL'].includes(el.tagName);
+    const isInlineDisplay = display.includes('inline');
+
+    if (!isInlineTag && !isInlineDisplay) return false;
+
+    // Check if element is a shape (visual object without text)
+    // If an element is empty but has a visible background/border, it's a shape (like a dot).
+    // We must return false so the parent isn't treated as a text-only container.
+    const hasContent = el.textContent.trim().length > 0;
+    const bgColor = parseColor(style.backgroundColor);
+    const hasVisibleBg = bgColor.hex && bgColor.opacity > 0;
+    const hasBorder = parseFloat(style.borderWidth) > 0 && parseColor(style.borderColor).opacity > 0;
+
+    if (!hasContent && (hasVisibleBg || hasBorder)) {
+      return false; 
+    }
+
+    return true;
+  };
+
+  return children.every(isSafeInline);
 }
 
-/**
- * Extracts the rotation angle in degrees from a CSS transform string.
- * @param {string} transformStr - The CSS transform string.
- * @returns {number} - The rotation angle in degrees.
- */
 export function getRotation(transformStr) {
   if (!transformStr || transformStr === 'none') return 0;
   const values = transformStr.split('(')[1].split(')')[0].split(',');
@@ -244,12 +273,6 @@ export function getRotation(transformStr) {
   return Math.round(Math.atan2(b, a) * (180 / Math.PI));
 }
 
-/**
- * Converts an SVG DOM node to a PNG data URL.
- * Inlines styles to ensure accurate rendering in the PNG.
- * @param {SVGElement} node - The SVG DOM node to convert.
- * @returns {Promise<string | null>} - A Promise that resolves with the PNG data URL or null on error.
- */
 export function svgToPng(node) {
   return new Promise((resolve) => {
     const clone = node.cloneNode(true);
@@ -260,15 +283,8 @@ export function svgToPng(node) {
     function inlineStyles(source, target) {
       const computed = window.getComputedStyle(source);
       const properties = [
-        'fill',
-        'stroke',
-        'stroke-width',
-        'stroke-linecap',
-        'stroke-linejoin',
-        'opacity',
-        'font-family',
-        'font-size',
-        'font-weight',
+        'fill', 'stroke', 'stroke-width', 'stroke-linecap',
+        'stroke-linejoin', 'opacity', 'font-family', 'font-size', 'font-weight',
       ];
 
       if (computed.fill === 'none') target.setAttribute('fill', 'none');
@@ -290,14 +306,12 @@ export function svgToPng(node) {
     }
 
     inlineStyles(node, clone);
-
     clone.setAttribute('width', width);
     clone.setAttribute('height', height);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
 
     const xml = new XMLSerializer().serializeToString(clone);
     const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
-
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => {
@@ -315,13 +329,6 @@ export function svgToPng(node) {
   });
 }
 
-/**
- * Parses CSS box-shadow properties and converts them into PPTX-compatible shadow options.
- * Supports multiple shadows, prioritizing the first visible (non-transparent) outer shadow.
- * @param {string} shadowStr - The CSS `box-shadow` string.
- * @param {number} scale - The scaling factor.
- * @returns {PptxGenJS.ShapeShadow | null} - PPTX shadow options, or null if no visible outer shadow.
- */
 export function getVisibleShadow(shadowStr, scale) {
   if (!shadowStr || shadowStr === 'none') return null;
   const shadows = shadowStr.split(/,(?![^()]*\))/);
@@ -353,16 +360,6 @@ export function getVisibleShadow(shadowStr, scale) {
   return null;
 }
 
-/**
- * Generates an SVG data URL for a linear gradient background with optional border-radius and border.
- * Parses CSS linear-gradient string to create SVG <linearGradient> and <rect> elements.
- * @param {number} w - Width of the SVG.
- * @param {number} h - Height of the SVG.
- * @param {string} bgString - The CSS `background-image` string (e.g., `linear-gradient(...)`).
- * @param {number} radius - Border radius for the rectangle.
- * @param {{color: string, width: number} | null} border - Optional border object with color (hex) and width.
- * @returns {string | null} - SVG data URL or null if parsing fails.
- */
 export function generateGradientSVG(w, h, bgString, radius, border) {
   try {
     const match = bgString.match(/linear-gradient\((.*)\)/);
@@ -370,29 +367,16 @@ export function generateGradientSVG(w, h, bgString, radius, border) {
     const content = match[1];
     const parts = content.split(/,(?![^()]*\))/).map((p) => p.trim());
 
-    let x1 = '0%',
-      y1 = '0%',
-      x2 = '0%',
-      y2 = '100%';
+    let x1 = '0%', y1 = '0%', x2 = '0%', y2 = '100%';
     let stopsStartIdx = 0;
     if (parts[0].includes('to right')) {
-      x1 = '0%';
-      x2 = '100%';
-      y2 = '0%';
-      stopsStartIdx = 1;
+      x1 = '0%'; x2 = '100%'; y2 = '0%'; stopsStartIdx = 1;
     } else if (parts[0].includes('to left')) {
-      x1 = '100%';
-      x2 = '0%';
-      y2 = '0%';
-      stopsStartIdx = 1;
+      x1 = '100%'; x2 = '0%'; y2 = '0%'; stopsStartIdx = 1;
     } else if (parts[0].includes('to top')) {
-      y1 = '100%';
-      y2 = '0%';
-      stopsStartIdx = 1;
+      y1 = '100%'; y2 = '0%'; stopsStartIdx = 1;
     } else if (parts[0].includes('to bottom')) {
-      y1 = '0%';
-      y2 = '100%';
-      stopsStartIdx = 1;
+      y1 = '0%'; y2 = '100%'; stopsStartIdx = 1;
     }
 
     let stopsXML = '';
@@ -432,15 +416,6 @@ export function generateGradientSVG(w, h, bgString, radius, border) {
   }
 }
 
-/**
- * Generates an SVG data URL for a blurred rectangle or ellipse, used for soft-edge effects.
- * @param {number} w - Original width of the element.
- * @param {number} h - Original height of the element.
- * @param {string} color - Hex color of the shape (without #).
- * @param {number} radius - Border radius of the shape.
- * @param {number} blurPx - Blur radius in pixels for the SVG filter.
- * @returns {{data: string, padding: number}} - Object containing SVG data URL and calculated padding.
- */
 export function generateBlurredSVG(w, h, color, radius, blurPx) {
   const padding = blurPx * 3;
   const fullW = w + padding * 2;

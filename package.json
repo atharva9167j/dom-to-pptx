@@ -1,10 +1,10 @@
 {
   "name": "dom-to-pptx",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A client-side library that converts any HTML element into a fully editable PowerPoint slide. **dom-to-pptx** transforms DOM structures into pixel-accurate `.pptx` content, preserving gradients, shadows, rounded images, and responsive layouts. It translates CSS Flexbox/Grid, linear-gradients, box-shadows, and typography into native PowerPoint shapes, enabling precise, design-faithful slide generation directly from the browser.",
   "main": "dist/dom-to-pptx.cjs",
   "module": "dist/dom-to-pptx.mjs",
-  "browser": "dist/dom-to-pptx.min.js",
+  "browser": "dist/dom-to-pptx.bundle.js",
   "exports": {
     ".": {
       "import": "./dist/dom-to-pptx.mjs",
@@ -57,9 +57,7 @@
   "bugs": {
     "url": "https://github.com/atharva9167j/dom-to-pptx/issues"
   },
-  "peerDependencies": {
-    "pptxgenjs": "^3.12.0"
-  },
+  
   "devDependencies": {
     "@rollup/plugin-commonjs": "^29.0.0",
     "@rollup/plugin-node-resolve": "^16.0.3",
@@ -67,5 +65,9 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.7.3"
+  },
+  "dependencies": {
+    "html2canvas": "^1.4.1",
+    "pptxgenjs": "^3.12.0"
   }
 }

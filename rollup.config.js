@@ -17,7 +17,7 @@ export default {
       sourcemap: false,
       exports: 'named',
     },
-    // UMD build for direct browser usage via script tag
+    // UMD build for direct browser usage via script tag (lightweight, keeps pptxgenjs external)
     {
       file: 'dist/dom-to-pptx.min.js',
       format: 'umd',
@@ -27,7 +27,18 @@ export default {
         pptxgenjs: 'PptxGenJS',
       },
     },
+    // Full standalone bundle (includes dependencies) — use this when you want a single <script> to work
+    {
+      file: 'dist/dom-to-pptx.bundle.js',
+      format: 'umd',
+      name: 'domToPptx',
+      esModule: false,
+      sourcemap: false,
+    },
   ],
   plugins: [resolve(), commonjs()],
-  external: ['pptxgenjs'],
+  // Keep conventional UMD/min file compatible with consumers that already load pptxgenjs separately.
+  // For the standalone `dist/dom-to-pptx.bundle.js` we must NOT mark dependencies as external so Rollup will
+  // include them. Therefore leave the external list empty (no externals).
+  external: [],
 };

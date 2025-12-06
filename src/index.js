@@ -1,8 +1,10 @@
 // src/index.js
 import * as PptxGenJSImport from 'pptxgenjs';
-// Normalize import so consumers get the constructor whether `pptxgenjs`
-// was published as a default export or CommonJS module with a `default` property.
+import html2canvas from 'html2canvas';
+
+// Normalize import
 const PptxGenJS = PptxGenJSImport?.default ?? PptxGenJSImport;
+
 import {
   parseColor,
   getTextStyle,
@@ -16,6 +18,8 @@ import {
   generateBlurredSVG,
   getBorderInfo,
   generateCompositeBorderSVG,
+  isClippedByParent,
+  generateCustomShapeSVG,
 } from './utils.js';
 import { getProcessedImage } from './image-processor.js';
 
@@ -28,23 +32,21 @@ const PX_TO_INCH = 1 / PPI;
  * @param {Object} options - { fileName: string }
  */
 export async function exportToPptx(target, options = {}) {
-  // Resolve the actual constructor in case `pptxgenjs` was imported/required
-  // with different shapes (function, { default: fn }, or { PptxGenJS: fn }).
   const resolvePptxConstructor = (pkg) => {
     if (!pkg) return null;
     if (typeof pkg === 'function') return pkg;
     if (pkg && typeof pkg.default === 'function') return pkg.default;
     if (pkg && typeof pkg.PptxGenJS === 'function') return pkg.PptxGenJS;
-    if (pkg && pkg.PptxGenJS && typeof pkg.PptxGenJS.default === 'function') return pkg.PptxGenJS.default;
+    if (pkg && pkg.PptxGenJS && typeof pkg.PptxGenJS.default === 'function')
+      return pkg.PptxGenJS.default;
     return null;
   };
 
   const PptxConstructor = resolvePptxConstructor(PptxGenJS);
-  if (!PptxConstructor) throw new Error('PptxGenJS constructor not found. Ensure `pptxgenjs` is installed or included as a script.');
+  if (!PptxConstructor) throw new Error('PptxGenJS constructor not found.');
   const pptx = new PptxConstructor();
   pptx.layout = 'LAYOUT_16x9';
 
-  // Standardize input to an array, ensuring single or multiple elements are handled consistently
   const elements = Array.isArray(target) ? target : [target];
 
   for (const el of elements) {
@@ -53,7 +55,6 @@ export async function exportToPptx(target, options = {}) {
       console.warn('Element not found, skipping slide:', el);
       continue;
     }
-
     const slide = pptx.addSlide();
     await processSlide(root, slide, pptx);
   }
@@ -89,11 +90,11 @@ async function processSlide(root, slide, pptx) {
   let domOrderCounter = 0;
 
   async function collect(node) {
-    const order = domOrderCounter++; // Assign a DOM order for z-index tie-breaking
-    const result = await createRenderItem(node, layoutConfig, order, pptx);
+    const order = domOrderCounter++;
+    const result = await createRenderItem(node, { ...layoutConfig, root }, order, pptx);
     if (result) {
-      if (result.items) renderQueue.push(...result.items); // Add any generated render items to the queue
-      if (result.stopRecursion) return; // Stop processing children if the item fully consumed the node
+      if (result.items) renderQueue.push(...result.items);
+      if (result.stopRecursion) return;
     }
     for (const child of node.children) await collect(child);
   }
@@ -112,6 +113,79 @@ async function processSlide(root, slide, pptx) {
   }
 }
 
+async function elementToCanvasImage(node, widthPx, heightPx, root) {
+  return new Promise((resolve) => {
+    const width = Math.ceil(widthPx);
+    const height = Math.ceil(heightPx);
+
+    if (width <= 0 || height <= 0) {
+      resolve(null);
+      return;
+    }
+
+    const style = window.getComputedStyle(node);
+
+    html2canvas(root, {
+      width: root.scrollWidth,
+      height: root.scrollHeight,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: null,
+    })
+      .then((canvas) => {
+        const rootCanvas = canvas;
+        const nodeRect = node.getBoundingClientRect();
+        const rootRect = root.getBoundingClientRect();
+        const sourceX = nodeRect.left - rootRect.left;
+        const sourceY = nodeRect.top - rootRect.top;
+
+        const destCanvas = document.createElement('canvas');
+        destCanvas.width = width;
+        destCanvas.height = height;
+        const ctx = destCanvas.getContext('2d');
+
+        ctx.drawImage(rootCanvas, sourceX, sourceY, width, height, 0, 0, width, height);
+
+        // Parse radii
+        let tl = parseFloat(style.borderTopLeftRadius) || 0;
+        let tr = parseFloat(style.borderTopRightRadius) || 0;
+        let br = parseFloat(style.borderBottomRightRadius) || 0;
+        let bl = parseFloat(style.borderBottomLeftRadius) || 0;
+
+        const f = Math.min(
+          width / (tl + tr) || Infinity,
+          height / (tr + br) || Infinity,
+          width / (br + bl) || Infinity,
+          height / (bl + tl) || Infinity
+        );
+
+        if (f < 1) {
+          tl *= f;
+          tr *= f;
+          br *= f;
+          bl *= f;
+        }
+
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.beginPath();
+        ctx.moveTo(tl, 0);
+        ctx.lineTo(width - tr, 0);
+        ctx.arcTo(width, 0, width, tr, tr);
+        ctx.lineTo(width, height - br);
+        ctx.arcTo(width, height, width - br, height, br);
+        ctx.lineTo(bl, height);
+        ctx.arcTo(0, height, 0, height - bl, bl);
+        ctx.lineTo(0, tl);
+        ctx.arcTo(0, 0, tl, 0, tl);
+        ctx.closePath();
+        ctx.fill();
+
+        resolve(destCanvas.toDataURL('image/png'));
+      })
+      .catch(() => resolve(null));
+  });
+}
+
 async function createRenderItem(node, config, domOrder, pptx) {
   if (node.nodeType !== 1) return null;
   const style = window.getComputedStyle(node);
@@ -119,7 +193,7 @@ async function createRenderItem(node, config, domOrder, pptx) {
     return null;
 
   const rect = node.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return null;
+  if (rect.width < 0.5 || rect.height < 0.5) return null;
 
   const zIndex = style.zIndex !== 'auto' ? parseInt(style.zIndex) : 0;
   const rotation = getRotation(style.transform);
@@ -139,7 +213,6 @@ async function createRenderItem(node, config, domOrder, pptx) {
 
   const items = [];
 
-  // Image handling for SVG nodes directly
   if (node.nodeName.toUpperCase() === 'SVG') {
     const pngData = await svgToPng(node);
     if (pngData)
@@ -151,15 +224,42 @@ async function createRenderItem(node, config, domOrder, pptx) {
       });
     return { items, stopRecursion: true };
   }
-  // Image handling for <img> tags, including rounded corners
+
+  // --- UPDATED IMG BLOCK START ---
   if (node.tagName === 'IMG') {
-    let borderRadius = parseFloat(style.borderRadius) || 0;
-    if (borderRadius === 0) {
-      const parentStyle = window.getComputedStyle(node.parentElement);
-      if (parentStyle.overflow !== 'visible')
-        borderRadius = parseFloat(parentStyle.borderRadius) || 0;
+    // Extract individual corner radii
+    let radii = {
+      tl: parseFloat(style.borderTopLeftRadius) || 0,
+      tr: parseFloat(style.borderTopRightRadius) || 0,
+      br: parseFloat(style.borderBottomRightRadius) || 0,
+      bl: parseFloat(style.borderBottomLeftRadius) || 0,
+    };
+
+    const hasAnyRadius = radii.tl > 0 || radii.tr > 0 || radii.br > 0 || radii.bl > 0;
+
+    // Fallback: Check parent if image has no specific radius but parent clips it
+    if (!hasAnyRadius) {
+      const parent = node.parentElement;
+      const parentStyle = window.getComputedStyle(parent);
+      if (parentStyle.overflow !== 'visible') {
+        const pRadii = {
+          tl: parseFloat(parentStyle.borderTopLeftRadius) || 0,
+          tr: parseFloat(parentStyle.borderTopRightRadius) || 0,
+          br: parseFloat(parentStyle.borderBottomRightRadius) || 0,
+          bl: parseFloat(parentStyle.borderBottomLeftRadius) || 0,
+        };
+        // Simple heuristic: If image takes up full size of parent, inherit radii.
+        // For complex grids (like slide-1), this blindly applies parent radius.
+        // In a perfect world, we'd calculate intersection, but for now we apply parent radius
+        // if the image is close to the parent's size, effectively masking it.
+        const pRect = parent.getBoundingClientRect();
+        if (Math.abs(pRect.width - rect.width) < 5 && Math.abs(pRect.height - rect.height) < 5) {
+          radii = pRadii;
+        }
+      }
     }
-    const processed = await getProcessedImage(node.src, widthPx, heightPx, borderRadius);
+
+    const processed = await getProcessedImage(node.src, widthPx, heightPx, radii);
     if (processed)
       items.push({
         type: 'image',
@@ -168,6 +268,44 @@ async function createRenderItem(node, config, domOrder, pptx) {
         options: { data: processed, x, y, w, h, rotate: rotation },
       });
     return { items, stopRecursion: true };
+  }
+  // --- UPDATED IMG BLOCK END ---
+
+  // Radii processing for Divs/Shapes
+  const borderRadiusValue = parseFloat(style.borderRadius) || 0;
+  const borderBottomLeftRadius = parseFloat(style.borderBottomLeftRadius) || 0;
+  const borderBottomRightRadius = parseFloat(style.borderBottomRightRadius) || 0;
+  const borderTopLeftRadius = parseFloat(style.borderTopLeftRadius) || 0;
+  const borderTopRightRadius = parseFloat(style.borderTopRightRadius) || 0;
+
+  const hasPartialBorderRadius =
+    (borderBottomLeftRadius > 0 && borderBottomLeftRadius !== borderRadiusValue) ||
+    (borderBottomRightRadius > 0 && borderBottomRightRadius !== borderRadiusValue) ||
+    (borderTopLeftRadius > 0 && borderTopLeftRadius !== borderRadiusValue) ||
+    (borderTopRightRadius > 0 && borderTopRightRadius !== borderRadiusValue) ||
+    (borderRadiusValue === 0 &&
+      (borderBottomLeftRadius ||
+        borderBottomRightRadius ||
+        borderTopLeftRadius ||
+        borderTopRightRadius));
+
+  // Allow clipped elements to be rendered via canvas
+  if (hasPartialBorderRadius && isClippedByParent(node)) {
+    const marginLeft = parseFloat(style.marginLeft) || 0;
+    const marginTop = parseFloat(style.marginTop) || 0;
+    x += marginLeft * PX_TO_INCH * config.scale;
+    y += marginTop * PX_TO_INCH * config.scale;
+
+    const canvasImageData = await elementToCanvasImage(node, widthPx, heightPx, config.root);
+    if (canvasImageData) {
+      items.push({
+        type: 'image',
+        zIndex,
+        domOrder,
+        options: { data: canvasImageData, x, y, w, h, rotate: rotation },
+      });
+      return { items, stopRecursion: true };
+    }
   }
 
   const bgColorObj = parseColor(style.backgroundColor);
@@ -186,7 +324,6 @@ async function createRenderItem(node, config, domOrder, pptx) {
 
   const shadowStr = style.boxShadow;
   const hasShadow = shadowStr && shadowStr !== 'none';
-  const borderRadius = parseFloat(style.borderRadius) || 0;
   const softEdge = getSoftEdges(style.filter, config.scale);
 
   let isImageWrapper = false;
@@ -211,7 +348,6 @@ async function createRenderItem(node, config, domOrder, pptx) {
       textParts.push({
         text: '• ',
         options: {
-          // Default bullet point styling
           color: parseColor(style.color).hex || '000000',
           fontSize: fontSizePt,
         },
@@ -219,7 +355,6 @@ async function createRenderItem(node, config, domOrder, pptx) {
     }
 
     node.childNodes.forEach((child, index) => {
-      // Process text content, sanitizing whitespace and applying text transformations
       let textVal = child.nodeType === 3 ? child.nodeValue : child.textContent;
       let nodeStyle = child.nodeType === 1 ? window.getComputedStyle(child) : style;
       textVal = textVal.replace(/[\n\r\t]+/g, ' ').replace(/\s{2,}/g, ' ');
@@ -260,7 +395,13 @@ async function createRenderItem(node, config, domOrder, pptx) {
     let bgData = null;
     let padIn = 0;
     if (softEdge) {
-      const svgInfo = generateBlurredSVG(widthPx, heightPx, bgColorObj.hex, borderRadius, softEdge);
+      const svgInfo = generateBlurredSVG(
+        widthPx,
+        heightPx,
+        bgColorObj.hex,
+        borderRadiusValue,
+        softEdge
+      );
       bgData = svgInfo.data;
       padIn = svgInfo.padding * PX_TO_INCH * config.scale;
     } else {
@@ -268,7 +409,7 @@ async function createRenderItem(node, config, domOrder, pptx) {
         widthPx,
         heightPx,
         style.backgroundImage,
-        borderRadius,
+        borderRadiusValue,
         hasBorder ? { color: borderColorObj.hex, width: borderWidth } : null
       );
     }
@@ -333,91 +474,105 @@ async function createRenderItem(node, config, domOrder, pptx) {
   ) {
     const finalAlpha = elementOpacity * bgColorObj.opacity;
     const transparency = (1 - finalAlpha) * 100;
+    const useSolidFill = bgColorObj.hex && !isImageWrapper;
 
-    const shapeOpts = {
-      x,
-      y,
-      w,
-      h,
-      rotate: rotation,
-      fill:
-        bgColorObj.hex && !isImageWrapper
+    if (hasPartialBorderRadius && useSolidFill && !textPayload) {
+      const shapeSvg = generateCustomShapeSVG(
+        widthPx,
+        heightPx,
+        bgColorObj.hex,
+        bgColorObj.opacity,
+        {
+          tl: parseFloat(style.borderTopLeftRadius) || 0,
+          tr: parseFloat(style.borderTopRightRadius) || 0,
+          br: parseFloat(style.borderBottomRightRadius) || 0,
+          bl: parseFloat(style.borderBottomLeftRadius) || 0,
+        }
+      );
+
+      items.push({
+        type: 'image',
+        zIndex,
+        domOrder,
+        options: {
+          data: shapeSvg,
+          x,
+          y,
+          w,
+          h,
+          rotate: rotation,
+        },
+      });
+    } else {
+      const shapeOpts = {
+        x,
+        y,
+        w,
+        h,
+        rotate: rotation,
+        fill: useSolidFill
           ? { color: bgColorObj.hex, transparency: transparency }
           : { type: 'none' },
-      // Only apply line if the border is uniform
-      line: hasUniformBorder ? borderInfo.options : null,
-    };
-
-    if (hasShadow) {
-      shapeOpts.shadow = getVisibleShadow(shadowStr, config.scale);
-    }
-
-    const borderRadius = parseFloat(style.borderRadius) || 0;
-    const widthPx = node.offsetWidth || rect.width;
-    const heightPx = node.offsetHeight || rect.height;
-    const isCircle =
-      borderRadius >= Math.min(widthPx, heightPx) / 2 - 1 && Math.abs(widthPx - heightPx) < 2;
-
-    let shapeType = pptx.ShapeType.rect;
-    if (isCircle) shapeType = pptx.ShapeType.ellipse;
-    else if (borderRadius > 0) {
-      shapeType = pptx.ShapeType.roundRect;
-      shapeOpts.rectRadius = Math.min(1, borderRadius / (Math.min(widthPx, heightPx) / 2));
-    }
-
-    // MERGE TEXT INTO SHAPE (if text exists)
-    if (textPayload) {
-      const textOptions = {
-        shape: shapeType,
-        ...shapeOpts,
-        align: textPayload.align,
-        valign: textPayload.valign,
-        inset: textPayload.inset,
-        margin: 0,
-        wrap: true,
-        autoFit: false,
+        line: hasUniformBorder ? borderInfo.options : null,
       };
-      items.push({
-        type: 'text',
-        zIndex,
-        domOrder,
-        textParts: textPayload.text,
-        options: textOptions,
-      });
-      // If no text, just draw the shape
-    } else {
-      items.push({
-        type: 'shape',
-        zIndex,
-        domOrder,
-        shapeType,
-        options: shapeOpts,
-      });
+
+      if (hasShadow) {
+        shapeOpts.shadow = getVisibleShadow(shadowStr, config.scale);
+      }
+
+      const borderRadius = parseFloat(style.borderRadius) || 0;
+      const aspectRatio = Math.max(widthPx, heightPx) / Math.min(widthPx, heightPx);
+      const isCircle = aspectRatio < 1.1 && borderRadius >= Math.min(widthPx, heightPx) / 2 - 1;
+
+      let shapeType = pptx.ShapeType.rect;
+      if (isCircle) shapeType = pptx.ShapeType.ellipse;
+      else if (borderRadius > 0) {
+        shapeType = pptx.ShapeType.roundRect;
+        shapeOpts.rectRadius = Math.min(0.5, borderRadius / Math.min(widthPx, heightPx));
+      }
+
+      if (textPayload) {
+        const textOptions = {
+          shape: shapeType,
+          ...shapeOpts,
+          align: textPayload.align,
+          valign: textPayload.valign,
+          inset: textPayload.inset,
+          margin: 0,
+          wrap: true,
+          autoFit: false,
+        };
+        items.push({
+          type: 'text',
+          zIndex,
+          domOrder,
+          textParts: textPayload.text,
+          options: textOptions,
+        });
+      } else if (!hasPartialBorderRadius) {
+        items.push({
+          type: 'shape',
+          zIndex,
+          domOrder,
+          shapeType,
+          options: shapeOpts,
+        });
+      }
     }
 
-    // ADD COMPOSITE BORDERS (if they exist)
     if (hasCompositeBorder) {
-      // Generate a single SVG image that contains all the rounded border sides
       const borderSvgData = generateCompositeBorderSVG(
         widthPx,
         heightPx,
-        borderRadius,
+        borderRadiusValue,
         borderInfo.sides
       );
-
       if (borderSvgData) {
         items.push({
           type: 'image',
           zIndex: zIndex + 1,
           domOrder,
-          options: {
-            data: borderSvgData,
-            x: x,
-            y: y,
-            w: w,
-            h: h,
-            rotate: rotation,
-          },
+          options: { data: borderSvgData, x, y, w, h, rotate: rotation },
         });
       }
     }

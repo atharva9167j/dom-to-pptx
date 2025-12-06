@@ -1,6 +1,6 @@
 # dom-to-pptx
 
-**The High-Fidelity HTML to PowerPoint Converter (v1.0.2).**
+**The High-Fidelity HTML to PowerPoint Converter (v1.0.4).**
 
 Most HTML-to-PPTX libraries fail when faced with modern web design. They break on gradients, misalign text, ignore rounded corners, or simply take a screenshot (which isn't editable).
 
@@ -187,18 +187,23 @@ MIT © [Atharva Dharmendra Jagtap](https://github.com/atharva9167j) and `dom-to-
 
 This project is built on top of [PptxGenJS](https://github.com/gitbrent/PptxGenJS). Huge thanks to the PptxGenJS maintainers and all contributors — dom-to-pptx leverages and extends their excellent work on PPTX generation.
 
-## Peer Dependencies
+## Bundle & Dependencies
 
-`dom-to-pptx` relies on `pptxgenjs` as a peer dependency. You need to install it separately in your project:
+Starting with v1.0.4 `dom-to-pptx` ships a standalone browser bundle that includes runtime dependencies (for convenience).
 
-```bash
-npm install pptxgenjs
-```
-
-## Peer Dependencies
-
-`dom-to-pptx` relies on `pptxgenjs` as a peer dependency. You need to install it separately in your project:
+- If you use npm / a bundler, run:
 
 ```bash
-npm install pptxgenjs
+npm install dom-to-pptx
 ```
+
+- For direct browser usage (single script tag), use the bundled file that already includes `pptxgenjs` and `html2canvas`:
+
+```html
+<script src="/node_modules/dom-to-pptx/dist/dom-to-pptx.bundle.js"></script>
+<script>
+  domToPptx.exportToPptx('#slide-container', { fileName: 'report.pptx' });
+</script>
+```
+
+If you prefer to manage `pptxgenjs` yourself (smaller bundle), the legacy `dist/dom-to-pptx.min.js` remains available and expects `pptxgenjs` to be loaded separately.

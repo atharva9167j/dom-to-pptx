@@ -14,18 +14,46 @@ export async function getProcessedImage(src, targetW, targetH, radius) {
       const ctx = canvas.getContext('2d');
       ctx.scale(scale, scale);
 
-      // 1. Draw the Mask (Rounded Rect)
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(0, 0, targetW, targetH, radius);
-      } else {
-        // Fallback for older browsers if needed
-        ctx.rect(0, 0, targetW, targetH);
+      // Normalize radius input to an object { tl, tr, br, bl }
+      let r = { tl: 0, tr: 0, br: 0, bl: 0 };
+      if (typeof radius === 'number') {
+        r = { tl: radius, tr: radius, br: radius, bl: radius };
+      } else if (typeof radius === 'object' && radius !== null) {
+        r = { ...r, ...radius }; // Merge with defaults
       }
+
+      // 1. Draw the Mask (Custom Shape with specific corners)
+      ctx.beginPath();
+      
+      // Border Radius Clamping Logic (CSS Spec)
+      // Prevents corners from overlapping if radii are too large for the container
+      const factor = Math.min(
+        (targetW / (r.tl + r.tr)) || Infinity,
+        (targetH / (r.tr + r.br)) || Infinity,
+        (targetW / (r.br + r.bl)) || Infinity,
+        (targetH / (r.bl + r.tl)) || Infinity
+      );
+
+      if (factor < 1) {
+        r.tl *= factor; r.tr *= factor; r.br *= factor; r.bl *= factor;
+      }
+
+      // Draw path: Top-Left -> Top-Right -> Bottom-Right -> Bottom-Left
+      ctx.moveTo(r.tl, 0);
+      ctx.lineTo(targetW - r.tr, 0);
+      ctx.arcTo(targetW, 0, targetW, r.tr, r.tr);
+      ctx.lineTo(targetW, targetH - r.br);
+      ctx.arcTo(targetW, targetH, targetW - r.br, targetH, r.br);
+      ctx.lineTo(r.bl, targetH);
+      ctx.arcTo(0, targetH, 0, targetH - r.bl, r.bl);
+      ctx.lineTo(0, r.tl);
+      ctx.arcTo(0, 0, r.tl, 0, r.tl);
+      
+      ctx.closePath();
       ctx.fillStyle = '#000';
       ctx.fill();
 
-      // 2. Composite Source-In
+      // 2. Composite Source-In (Crops the next image draw to the mask)
       ctx.globalCompositeOperation = 'source-in';
 
       // 3. Draw Image (Object Cover Logic)
