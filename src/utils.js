@@ -243,24 +243,33 @@ export function isTextContainer(node) {
 
   // Check if children are purely inline text formatting or visual shapes
   const isSafeInline = (el) => {
+    // 1. Reject Web Components / Icons / Images
+    if (el.tagName.includes('-')) return false;
+    if (el.tagName === 'IMG' || el.tagName === 'SVG') return false;
+
     const style = window.getComputedStyle(el);
     const display = style.display;
 
-    // If it's a standard inline element
-    const isInlineTag = ['SPAN', 'B', 'STRONG', 'EM', 'I', 'A', 'SMALL'].includes(el.tagName);
+    // 2. Initial check: Must be a standard inline tag OR display:inline
+    const isInlineTag = ['SPAN', 'B', 'STRONG', 'EM', 'I', 'A', 'SMALL', 'MARK'].includes(el.tagName);
     const isInlineDisplay = display.includes('inline');
 
     if (!isInlineTag && !isInlineDisplay) return false;
 
-    // Check if element is a shape (visual object without text)
-    // If an element is empty but has a visible background/border, it's a shape (like a dot).
-    // We must return false so the parent isn't treated as a text-only container.
-    const hasContent = el.textContent.trim().length > 0;
+    // 3. CRITICAL FIX: Check for Structural Styling
+    // PPTX Text Runs (parts of a text line) CANNOT have backgrounds, borders, or padding.
+    // If a child element has these, the parent is NOT a simple text container; 
+    // it is a layout container composed of styled blocks.
     const bgColor = parseColor(style.backgroundColor);
     const hasVisibleBg = bgColor.hex && bgColor.opacity > 0;
-    const hasBorder =
-      parseFloat(style.borderWidth) > 0 && parseColor(style.borderColor).opacity > 0;
+    const hasBorder = parseFloat(style.borderWidth) > 0 && parseColor(style.borderColor).opacity > 0;
 
+    if (hasVisibleBg || hasBorder) {
+      return false;
+    }
+
+    // 4. Check for empty shapes (visual objects without text, like dots)
+    const hasContent = el.textContent.trim().length > 0;
     if (!hasContent && (hasVisibleBg || hasBorder)) {
       return false;
     }

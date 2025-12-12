@@ -12,7 +12,6 @@ import {
   getVisibleShadow,
   generateGradientSVG,
   getRotation,
-  svgToPng,
   getPadding,
   getSoftEdges,
   generateBlurredSVG,
@@ -87,66 +86,115 @@ async function processSlide(root, slide, pptx) {
   };
 
   const renderQueue = [];
+  const asyncTasks = []; // Queue for heavy operations (Images, Canvas)
   let domOrderCounter = 0;
 
-  async function collect(node) {
+  // Sync Traversal Function
+  function collect(node, parentZIndex) {
     const order = domOrderCounter++;
-    const result = await createRenderItem(node, { ...layoutConfig, root }, order, pptx);
+
+    let currentZ = parentZIndex;
+    let nodeStyle = null;
+    const nodeType = node.nodeType;
+
+    if (nodeType === 1) {
+      nodeStyle = window.getComputedStyle(node);
+      // Optimization: Skip completely hidden elements immediately
+      if (
+        nodeStyle.display === 'none' ||
+        nodeStyle.visibility === 'hidden' ||
+        nodeStyle.opacity === '0'
+      ) {
+        return;
+      }
+      if (nodeStyle.zIndex !== 'auto') {
+        currentZ = parseInt(nodeStyle.zIndex);
+      }
+    }
+
+    // Prepare the item. If it needs async work, it returns a 'job'
+    const result = prepareRenderItem(
+      node,
+      { ...layoutConfig, root },
+      order,
+      pptx,
+      currentZ,
+      nodeStyle
+    );
+
     if (result) {
-      if (result.items) renderQueue.push(...result.items);
+      if (result.items) {
+        // Push items immediately to queue (data might be missing but filled later)
+        renderQueue.push(...result.items);
+      }
+      if (result.job) {
+        // Push the promise-returning function to the task list
+        asyncTasks.push(result.job);
+      }
       if (result.stopRecursion) return;
     }
-    for (const child of node.children) await collect(child);
+
+    // Recurse children synchronously
+    const childNodes = node.childNodes;
+    for (let i = 0; i < childNodes.length; i++) {
+      collect(childNodes[i], currentZ);
+    }
   }
 
-  await collect(root);
+  // 1. Traverse and build the structure (Fast)
+  collect(root, 0);
 
-  renderQueue.sort((a, b) => {
+  // 2. Execute all heavy tasks in parallel (Fast)
+  if (asyncTasks.length > 0) {
+    await Promise.all(asyncTasks.map((task) => task()));
+  }
+
+  // 3. Cleanup and Sort
+  // Remove items that failed to generate data (marked with skip)
+  const finalQueue = renderQueue.filter(
+    (item) => !item.skip && (item.type !== 'image' || item.options.data)
+  );
+
+  finalQueue.sort((a, b) => {
     if (a.zIndex !== b.zIndex) return a.zIndex - b.zIndex;
     return a.domOrder - b.domOrder;
   });
 
-  for (const item of renderQueue) {
+  // 4. Add to Slide
+  for (const item of finalQueue) {
     if (item.type === 'shape') slide.addShape(item.shapeType, item.options);
     if (item.type === 'image') slide.addImage(item.options);
     if (item.type === 'text') slide.addText(item.textParts, item.options);
   }
 }
 
-async function elementToCanvasImage(node, widthPx, heightPx, root) {
+/**
+ * Optimized html2canvas wrapper
+ * Now strictly captures the node itself, not the root.
+ */
+async function elementToCanvasImage(node, widthPx, heightPx) {
   return new Promise((resolve) => {
-    const width = Math.ceil(widthPx);
-    const height = Math.ceil(heightPx);
-
-    if (width <= 0 || height <= 0) {
-      resolve(null);
-      return;
-    }
-
+    const width = Math.max(Math.ceil(widthPx), 1);
+    const height = Math.max(Math.ceil(heightPx), 1);
     const style = window.getComputedStyle(node);
 
-    html2canvas(root, {
-      width: root.scrollWidth,
-      height: root.scrollHeight,
-      useCORS: true,
-      allowTaint: true,
+    // Optimized: Capture ONLY the specific node
+    html2canvas(node, {
       backgroundColor: null,
+      logging: false,
+      scale: 2, // Slight quality boost
     })
       .then((canvas) => {
-        const rootCanvas = canvas;
-        const nodeRect = node.getBoundingClientRect();
-        const rootRect = root.getBoundingClientRect();
-        const sourceX = nodeRect.left - rootRect.left;
-        const sourceY = nodeRect.top - rootRect.top;
-
         const destCanvas = document.createElement('canvas');
         destCanvas.width = width;
         destCanvas.height = height;
         const ctx = destCanvas.getContext('2d');
 
-        ctx.drawImage(rootCanvas, sourceX, sourceY, width, height, 0, 0, width, height);
+        // Draw the captured canvas into our sized canvas
+        // html2canvas might return a larger canvas if scale > 1, so we fit it
+        ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
 
-        // Parse radii
+        // Apply border radius clipping
         let tl = parseFloat(style.borderTopLeftRadius) || 0;
         let tr = parseFloat(style.borderTopRightRadius) || 0;
         let br = parseFloat(style.borderBottomRightRadius) || 0;
@@ -166,38 +214,89 @@ async function elementToCanvasImage(node, widthPx, heightPx, root) {
           bl *= f;
         }
 
-        ctx.globalCompositeOperation = 'destination-in';
-        ctx.beginPath();
-        ctx.moveTo(tl, 0);
-        ctx.lineTo(width - tr, 0);
-        ctx.arcTo(width, 0, width, tr, tr);
-        ctx.lineTo(width, height - br);
-        ctx.arcTo(width, height, width - br, height, br);
-        ctx.lineTo(bl, height);
-        ctx.arcTo(0, height, 0, height - bl, bl);
-        ctx.lineTo(0, tl);
-        ctx.arcTo(0, 0, tl, 0, tl);
-        ctx.closePath();
-        ctx.fill();
+        if (tl + tr + br + bl > 0) {
+          ctx.globalCompositeOperation = 'destination-in';
+          ctx.beginPath();
+          ctx.moveTo(tl, 0);
+          ctx.lineTo(width - tr, 0);
+          ctx.arcTo(width, 0, width, tr, tr);
+          ctx.lineTo(width, height - br);
+          ctx.arcTo(width, height, width - br, height, br);
+          ctx.lineTo(bl, height);
+          ctx.arcTo(0, height, 0, height - bl, bl);
+          ctx.lineTo(0, tl);
+          ctx.arcTo(0, 0, tl, 0, tl);
+          ctx.closePath();
+          ctx.fill();
+        }
 
         resolve(destCanvas.toDataURL('image/png'));
       })
-      .catch(() => resolve(null));
+      .catch((e) => {
+        console.warn('Canvas capture failed for node', node, e);
+        resolve(null);
+      });
   });
 }
 
-async function createRenderItem(node, config, domOrder, pptx) {
+/**
+ * Replaces createRenderItem.
+ * Returns { items: [], job: () => Promise, stopRecursion: boolean }
+ */
+function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, computedStyle) {
+  // 1. Text Node Handling
+  if (node.nodeType === 3) {
+    const textContent = node.nodeValue.trim();
+    if (!textContent) return null;
+
+    const parent = node.parentElement;
+    if (!parent) return null;
+
+    if (isTextContainer(parent)) return null; // Parent handles it
+
+    const range = document.createRange();
+    range.selectNode(node);
+    const rect = range.getBoundingClientRect();
+    range.detach();
+
+    const style = window.getComputedStyle(parent);
+    const widthPx = rect.width;
+    const heightPx = rect.height;
+    const unrotatedW = widthPx * PX_TO_INCH * config.scale;
+    const unrotatedH = heightPx * PX_TO_INCH * config.scale;
+
+    const x = config.offX + (rect.left - config.rootX) * PX_TO_INCH * config.scale;
+    const y = config.offY + (rect.top - config.rootY) * PX_TO_INCH * config.scale;
+
+    return {
+      items: [
+        {
+          type: 'text',
+          zIndex: effectiveZIndex,
+          domOrder,
+          textParts: [
+            {
+              text: textContent,
+              options: getTextStyle(style, config.scale),
+            },
+          ],
+          options: { x, y, w: unrotatedW, h: unrotatedH, margin: 0, autoFit: false },
+        },
+      ],
+      stopRecursion: false,
+    };
+  }
+
   if (node.nodeType !== 1) return null;
-  const style = window.getComputedStyle(node);
-  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')
-    return null;
+  const style = computedStyle; // Use pre-computed style
 
   const rect = node.getBoundingClientRect();
   if (rect.width < 0.5 || rect.height < 0.5) return null;
 
-  const zIndex = style.zIndex !== 'auto' ? parseInt(style.zIndex) : 0;
+  const zIndex = effectiveZIndex;
   const rotation = getRotation(style.transform);
   const elementOpacity = parseFloat(style.opacity);
+  const safeOpacity = isNaN(elementOpacity) ? 1 : elementOpacity;
 
   const widthPx = node.offsetWidth || rect.width;
   const heightPx = node.offsetHeight || rect.height;
@@ -213,21 +312,31 @@ async function createRenderItem(node, config, domOrder, pptx) {
 
   const items = [];
 
-  if (node.nodeName.toUpperCase() === 'SVG') {
-    const pngData = await svgToPng(node);
-    if (pngData)
-      items.push({
-        type: 'image',
-        zIndex,
-        domOrder,
-        options: { data: pngData, x, y, w, h, rotate: rotation },
-      });
-    return { items, stopRecursion: true };
+  // --- ASYNC JOB: SVGs / Icons ---
+  if (
+    node.nodeName.toUpperCase() === 'SVG' ||
+    node.tagName.includes('-') ||
+    node.tagName === 'ION-ICON'
+  ) {
+    const item = {
+      type: 'image',
+      zIndex,
+      domOrder,
+      options: { x, y, w, h, rotate: rotation, data: null }, // Data null initially
+    };
+
+    // Create Job
+    const job = async () => {
+      const pngData = await elementToCanvasImage(node, widthPx, heightPx);
+      if (pngData) item.options.data = pngData;
+      else item.skip = true;
+    };
+
+    return { items: [item], job, stopRecursion: true };
   }
 
-  // --- UPDATED IMG BLOCK START ---
+  // --- ASYNC JOB: IMG Tags ---
   if (node.tagName === 'IMG') {
-    // Extract individual corner radii
     let radii = {
       tl: parseFloat(style.borderTopLeftRadius) || 0,
       tr: parseFloat(style.borderTopRightRadius) || 0,
@@ -236,8 +345,6 @@ async function createRenderItem(node, config, domOrder, pptx) {
     };
 
     const hasAnyRadius = radii.tl > 0 || radii.tr > 0 || radii.br > 0 || radii.bl > 0;
-
-    // Fallback: Check parent if image has no specific radius but parent clips it
     if (!hasAnyRadius) {
       const parent = node.parentElement;
       const parentStyle = window.getComputedStyle(parent);
@@ -248,10 +355,6 @@ async function createRenderItem(node, config, domOrder, pptx) {
           br: parseFloat(parentStyle.borderBottomRightRadius) || 0,
           bl: parseFloat(parentStyle.borderBottomLeftRadius) || 0,
         };
-        // Simple heuristic: If image takes up full size of parent, inherit radii.
-        // For complex grids (like slide-1), this blindly applies parent radius.
-        // In a perfect world, we'd calculate intersection, but for now we apply parent radius
-        // if the image is close to the parent's size, effectively masking it.
         const pRect = parent.getBoundingClientRect();
         if (Math.abs(pRect.width - rect.width) < 5 && Math.abs(pRect.height - rect.height) < 5) {
           radii = pRadii;
@@ -259,19 +362,23 @@ async function createRenderItem(node, config, domOrder, pptx) {
       }
     }
 
-    const processed = await getProcessedImage(node.src, widthPx, heightPx, radii);
-    if (processed)
-      items.push({
-        type: 'image',
-        zIndex,
-        domOrder,
-        options: { data: processed, x, y, w, h, rotate: rotation },
-      });
-    return { items, stopRecursion: true };
-  }
-  // --- UPDATED IMG BLOCK END ---
+    const item = {
+      type: 'image',
+      zIndex,
+      domOrder,
+      options: { x, y, w, h, rotate: rotation, data: null },
+    };
 
-  // Radii processing for Divs/Shapes
+    const job = async () => {
+      const processed = await getProcessedImage(node.src, widthPx, heightPx, radii);
+      if (processed) item.options.data = processed;
+      else item.skip = true;
+    };
+
+    return { items: [item], job, stopRecursion: true };
+  }
+
+  // Radii logic
   const borderRadiusValue = parseFloat(style.borderRadius) || 0;
   const borderBottomLeftRadius = parseFloat(style.borderBottomLeftRadius) || 0;
   const borderBottomRightRadius = parseFloat(style.borderBottomRightRadius) || 0;
@@ -289,25 +396,30 @@ async function createRenderItem(node, config, domOrder, pptx) {
         borderTopLeftRadius ||
         borderTopRightRadius));
 
-  // Allow clipped elements to be rendered via canvas
+  // --- ASYNC JOB: Clipped Divs via Canvas ---
   if (hasPartialBorderRadius && isClippedByParent(node)) {
     const marginLeft = parseFloat(style.marginLeft) || 0;
     const marginTop = parseFloat(style.marginTop) || 0;
     x += marginLeft * PX_TO_INCH * config.scale;
     y += marginTop * PX_TO_INCH * config.scale;
 
-    const canvasImageData = await elementToCanvasImage(node, widthPx, heightPx, config.root);
-    if (canvasImageData) {
-      items.push({
-        type: 'image',
-        zIndex,
-        domOrder,
-        options: { data: canvasImageData, x, y, w, h, rotate: rotation },
-      });
-      return { items, stopRecursion: true };
-    }
+    const item = {
+      type: 'image',
+      zIndex,
+      domOrder,
+      options: { x, y, w, h, rotate: rotation, data: null },
+    };
+
+    const job = async () => {
+      const canvasImageData = await elementToCanvasImage(node, widthPx, heightPx);
+      if (canvasImageData) item.options.data = canvasImageData;
+      else item.skip = true;
+    };
+
+    return { items: [item], job, stopRecursion: true };
   }
 
+  // --- SYNC: Standard CSS Extraction ---
   const bgColorObj = parseColor(style.backgroundColor);
   const bgClip = style.webkitBackgroundClip || style.backgroundClip;
   const isBgClipText = bgClip === 'text';
@@ -346,7 +458,7 @@ async function createRenderItem(node, config, domOrder, pptx) {
       x -= bulletShift;
       w += bulletShift;
       textParts.push({
-        text: '• ',
+        text: '    ',
         options: {
           color: parseColor(style.color).hex || '000000',
           fontSize: fontSizePt,
@@ -452,7 +564,6 @@ async function createRenderItem(node, config, domOrder, pptx) {
       });
     }
     if (hasCompositeBorder) {
-      // Add border shapes after the main background
       const borderItems = createCompositeBorderItems(
         borderInfo.sides,
         x,
@@ -472,7 +583,7 @@ async function createRenderItem(node, config, domOrder, pptx) {
     hasShadow ||
     textPayload
   ) {
-    const finalAlpha = elementOpacity * bgColorObj.opacity;
+    const finalAlpha = safeOpacity * bgColorObj.opacity;
     const transparency = (1 - finalAlpha) * 100;
     const useSolidFill = bgColorObj.hex && !isImageWrapper;
 
@@ -494,14 +605,7 @@ async function createRenderItem(node, config, domOrder, pptx) {
         type: 'image',
         zIndex,
         domOrder,
-        options: {
-          data: shapeSvg,
-          x,
-          y,
-          w,
-          h,
-          rotate: rotation,
-        },
+        options: { data: shapeSvg, x, y, w, h, rotate: rotation },
       });
     } else {
       const shapeOpts = {
@@ -516,9 +620,7 @@ async function createRenderItem(node, config, domOrder, pptx) {
         line: hasUniformBorder ? borderInfo.options : null,
       };
 
-      if (hasShadow) {
-        shapeOpts.shadow = getVisibleShadow(shadowStr, config.scale);
-      }
+      if (hasShadow) shapeOpts.shadow = getVisibleShadow(shadowStr, config.scale);
 
       const borderRadius = parseFloat(style.borderRadius) || 0;
       const aspectRatio = Math.max(widthPx, heightPx) / Math.min(widthPx, heightPx);
@@ -581,77 +683,49 @@ async function createRenderItem(node, config, domOrder, pptx) {
   return { items, stopRecursion: !!textPayload };
 }
 
-/**
- * Helper function to create individual border shapes
- */
 function createCompositeBorderItems(sides, x, y, w, h, scale, zIndex, domOrder) {
   const items = [];
   const pxToInch = 1 / 96;
+  const common = { zIndex: zIndex + 1, domOrder, shapeType: 'rect' };
 
-  // TOP BORDER
-  if (sides.top.width > 0) {
+  if (sides.top.width > 0)
     items.push({
-      type: 'shape',
-      zIndex: zIndex + 1,
-      domOrder,
-      shapeType: 'rect',
-      options: {
-        x: x,
-        y: y,
-        w: w,
-        h: sides.top.width * pxToInch * scale,
-        fill: { color: sides.top.color },
-      },
+      ...common,
+      options: { x, y, w, h: sides.top.width * pxToInch * scale, fill: { color: sides.top.color } },
     });
-  }
-  // RIGHT BORDER
-  if (sides.right.width > 0) {
+  if (sides.right.width > 0)
     items.push({
-      type: 'shape',
-      zIndex: zIndex + 1,
-      domOrder,
-      shapeType: 'rect',
+      ...common,
       options: {
         x: x + w - sides.right.width * pxToInch * scale,
-        y: y,
+        y,
         w: sides.right.width * pxToInch * scale,
-        h: h,
+        h,
         fill: { color: sides.right.color },
       },
     });
-  }
-  // BOTTOM BORDER
-  if (sides.bottom.width > 0) {
+  if (sides.bottom.width > 0)
     items.push({
-      type: 'shape',
-      zIndex: zIndex + 1,
-      domOrder,
-      shapeType: 'rect',
+      ...common,
       options: {
-        x: x,
+        x,
         y: y + h - sides.bottom.width * pxToInch * scale,
-        w: w,
+        w,
         h: sides.bottom.width * pxToInch * scale,
         fill: { color: sides.bottom.color },
       },
     });
-  }
-  // LEFT BORDER
-  if (sides.left.width > 0) {
+  if (sides.left.width > 0)
     items.push({
-      type: 'shape',
-      zIndex: zIndex + 1,
-      domOrder,
-      shapeType: 'rect',
+      ...common,
       options: {
-        x: x,
-        y: y,
+        x,
+        y,
         w: sides.left.width * pxToInch * scale,
-        h: h,
+        h,
         fill: { color: sides.left.color },
       },
     });
-  }
 
   return items;
 }

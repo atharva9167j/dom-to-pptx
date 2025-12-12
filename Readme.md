@@ -1,6 +1,6 @@
 # dom-to-pptx
 
-**The High-Fidelity HTML to PowerPoint Converter (v1.0.6).**
+**The High-Fidelity HTML to PowerPoint Converter (v1.0.7).**
 
 Most HTML-to-PPTX libraries fail when faced with modern web design. They break on gradients, misalign text, ignore rounded corners, or simply take a screenshot (which isn't editable).
 
@@ -43,11 +43,9 @@ This library is intended for use in the browser (React, Vue, Svelte, Vanilla JS,
 ```javascript
 import { exportToPptx } from 'dom-to-pptx';
 
-// Note: If you are using a module bundler, it is recommended to import pptxgenjs
-// directly into your project to ensure tree-shaking and optimal bundle size.
 // import PptxGenJS from 'pptxgenjs'; // Uncomment and use if needed for your setup
 
-document.getElementById('download-btn').addEventListener('click', async () => {
+document.getElementById('export-btn').addEventListener('click', async () => {
   // Pass the CSS selector of the container you want to turn into a slide
   await exportToPptx('#slide-container', {
     fileName: 'slide-presentation.pptx',
@@ -78,20 +76,24 @@ You can use `dom-to-pptx` directly in the browser in two ways:
 
 ```html
 <!-- Single script that contains dom-to-pptx + pptxgenjs + html2canvas -->
-<script src="/node_modules/dom-to-pptx/dist/dom-to-pptx.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dom-to-pptx@latest/dist/dom-to-pptx.bundle.js"></script>
 <script>
-  document.getElementById('download-btn').addEventListener('click', async () => {
+  document.getElementById('export-btn').addEventListener('click', async () => {
     // The library is available globally as `domToPptx`
     await domToPptx.exportToPptx('#slide-container', { fileName: 'slide-presentation.pptx' });
   });
 </script>
 ```
 
-You can also load the bundle from a CDN (unpkg/jsdelivr):
+You can load the bundle from a CDN (unpkg/jsdelivr):
 
 ```html
 <script src="https://unpkg.com/dom-to-pptx@latest/dist/dom-to-pptx.bundle.js"></script>
 ```
+```html
+<script src="https://cdn.jsdelivr.net/npm/dom-to-pptx@latest/dist/dom-to-pptx.bundle.js"></script>
+```
+
 
 - Legacy — Explicit runtime includes (smaller dom-to-pptx file, you manage deps):
 
@@ -101,7 +103,7 @@ You can also load the bundle from a CDN (unpkg/jsdelivr):
 <!-- html2canvas is required by the legacy dom-to-pptx build for backdrop-filter and canvas image processing -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <!-- Then load the legacy dom-to-pptx file that expects the above libs -->
-<script src="/node_modules/dom-to-pptx/dist/dom-to-pptx.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dom-to-pptx@latest/dist/dom-to-pptx.min.js"></script>
 <script>
   document.getElementById('download-btn').addEventListener('click', async () => {
     await domToPptx.exportToPptx('#slide-container', { fileName: 'slide-presentation.pptx' });
@@ -125,57 +127,172 @@ For the best results, treat your container as a fixed-size canvas. We recommend 
 <!-- The library will capture this background color/gradient automatically -->
 <div
   id="slide-container"
-  class="slide w-[1000px] h-[562px] bg-white mx-auto shadow-xl relative overflow-hidden rounded-lg flex items-center justify-center p-10"
+  class="slide w-[1000px] h-[562px] bg-white rounded-xl overflow-hidden relative shadow-2xl shadow-black/50 flex"
 >
+  <!-- Left Sidebar -->
   <div
-    class="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden grid md:grid-cols-2 items-center 
-border-l-2 border-indigo-500"
+    class="w-1/3 bg-slate-900 relative overflow-hidden flex flex-col p-10 justify-between"
   >
-    <div class="p-12">
-      <h2 class="text-xl font-semibold text-indigo-500 uppercase tracking-wide mb-2">
-        Core Concept
+    <!-- Decorative gradients -->
+    <div
+      class="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none"
+    >
+      <div
+        class="absolute -top-20 -left-20 w-64 h-64 bg-purple-600 rounded-full blur-3xl mix-blend-screen"
+      ></div>
+      <div
+        class="absolute bottom-0 right-0 w-80 h-80 bg-indigo-600 rounded-full blur-3xl mix-blend-screen"
+      ></div>
+    </div>
+    <div class="relative z-10">
+      <div
+        class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/10 backdrop-blur-md mb-6"
+      >
+        <span
+          class="w-2 h-2 rounded-full bg-green-400 animate-pulse"
+        ></span>
+        <span class="text-xs font-medium text-slate-300 tracking-wider"
+          >LIVE DATA</span
+        >
+      </div>
+      <h2 class="text-4xl font-bold text-white leading-tight mb-4">
+        Quarterly <br />
+        <span
+          class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400"
+          >Performance</span
+        >
       </h2>
-      <h3 class="text-4xl font-bold text-slate-800 mb-6">From Bit to Qubit</h3>
-      <div class="space-y-6 text-slate-600">
-        <div class="flex items-start gap-4">
-          <div
-            class="flex-shrink-0 w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center font-bold text-slate-700"
-          >
-            B
-          </div>
-          <div>
-            <h4 class="font-bold text-slate-700">Classical Bit</h4>
-            <p>
-              A fundamental unit of information that is either
-              <span class="font-semibold text-indigo-600">0</span> or
-              <span class="font-semibold text-indigo-600">1</span>.
-            </p>
-          </div>
+      <p class="text-slate-400 leading-relaxed">
+        Visualizing the impact of high-fidelity DOM conversion on
+        presentation workflows.
+      </p>
+    </div>
+    <!-- Feature List (Flexbox/Grid test) -->
+    <div class="relative z-10 space-y-4">
+      <div
+        class="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/5"
+      >
+        <div
+          class="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold"
+        >
+          1
         </div>
-        <div class="flex items-start gap-4">
-          <div
-            class="flex-shrink-0 w-8 h-8 bg-indigo-200 rounded-full flex items-center justify-center font-bold text-indigo-700"
-          >
-            Q
-          </div>
-          <div>
-            <h4 class="font-bold text-slate-700">Quantum Bit (Qubit)</h4>
-            <p>
-              Can be <span class="font-semibold text-indigo-600">0</span>,
-              <span class="font-semibold text-indigo-600">1</span>, or a
-              <span class="font-semibold text-indigo-600">superposition</span>
-              of both states simultaneously.
-            </p>
-          </div>
+        <div class="text-sm text-slate-300">Pixel-perfect Shadows</div>
+      </div>
+      <div
+        class="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/5"
+      >
+        <div
+          class="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold"
+        >
+          2
+        </div>
+        <div class="text-sm text-slate-300">Complex Gradients</div>
+      </div>
+    </div>
+  </div>
+  <!-- Right Content -->
+  <div class="w-2/3 bg-slate-50 p-10 relative">
+    <!-- Header -->
+    <div class="flex justify-between items-start mb-10">
+      <div>
+        <h3 class="text-slate-800 font-bold text-xl">
+          Revenue Breakdown
+        </h3>
+        <p class="text-slate-500 text-sm">Fiscal Year 2024</p>
+      </div>
+      <div class="flex -space-x-2">
+        <!-- Rounded Images Test (CORS friendly) -->
+        <img
+          class="w-10 h-10 rounded-full border-2 border-white object-cover shadow-md"
+          src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&amp;fit=crop&amp;w=64&amp;h=64"
+          alt="User 1"
+        />
+        <img
+          class="w-10 h-10 rounded-full border-2 border-white object-cover shadow-md"
+          src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&amp;fit=crop&amp;w=64&amp;h=64"
+          alt="User 2"
+        />
+        <div
+          class="w-10 h-10 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 shadow-md"
+        >
+          +5
         </div>
       </div>
     </div>
-    <div class="h-64 md:h-full">
-      <img
-        src="https://picsum.photos/800/600?random=2"
-        alt="Stylized representation of a qubit"
-        class="w-full h-full object-cover"
-      />
+    <!-- Grid Layout Test -->
+    <div class="grid grid-cols-2 gap-6 mb-8">
+      <!-- Card 1: Gradient & Shadow -->
+      <div
+        class="bg-white p-5 rounded-xl complex-shadow border border-slate-100 relative overflow-hidden group"
+      >
+        <div class="relative z-10">
+          <p
+            class="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1"
+          >
+            Total Sales
+          </p>
+          <h4 class="text-3xl font-bold text-slate-800">$124,500</h4>
+          <div
+            class="mt-3 flex items-center text-xs font-semibold text-green-600"
+          >
+            <svg
+              class="w-3 h-3 mr-1"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+              ></path>
+            </svg>
+            <span>+14.5%</span>
+          </div>
+        </div>
+      </div>
+      <!-- Card 2: Gradient Border/Background -->
+      <div
+        class="p-5 rounded-xl shadow-lg text-white relative overflow-hidden"
+        style="
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        "
+      >
+        <p
+          class="text-xs font-bold text-white/80 uppercase tracking-wider mb-1"
+        >
+          Active Users
+        </p>
+        <h4 class="text-3xl font-bold text-white">45.2k</h4>
+        <div class="mt-3 w-full bg-black/20 rounded-full h-1.5">
+          <div
+            class="bg-white/90 h-1.5 rounded-full"
+            style="width: 70%"
+          ></div>
+        </div>
+      </div>
+    </div>
+    <!-- Complex Typography & Layout -->
+    <div class="bg-indigo-50/50 rounded-xl p-6 border border-indigo-100">
+      <h5 class="font-bold text-indigo-900 mb-3">Analysis Summary</h5>
+      <p class="text-indigo-800/80 text-sm leading-relaxed">
+        The
+        <span class="font-bold text-indigo-600">Q3 projection</span>
+        exceeds expectations due to the new
+        <span class="italic">optimization algorithm</span>. We observed a <strong class="text-indigo-700">240% increase</strong>
+        in processing speed across all nodes.
+      </p>
+    </div>
+    <!-- Floating Badge (Absolute positioning test) -->
+    <div
+      class="absolute bottom-6 right-6 bg-white/90 backdrop-blur px-4 py-2 rounded-lg shadow-lg border border-slate-200 flex items-center gap-2"
+    >
+      <div class="w-2 h-2 rounded-full bg-red-500"></div>
+      <span class="text-xs font-bold text-slate-600 uppercase"
+        >Confidential</span
+      >
     </div>
   </div>
 </div>
@@ -210,79 +327,3 @@ MIT © [Atharva Dharmendra Jagtap](https://github.com/atharva9167j) and `dom-to-
 ## Acknowledgements
 
 This project is built on top of [PptxGenJS](https://github.com/gitbrent/PptxGenJS). Huge thanks to the PptxGenJS maintainers and all contributors — dom-to-pptx leverages and extends their excellent work on PPTX generation.
-
-## Bundle & Dependencies
-
-Starting with v1.0.6 `dom-to-pptx` ships a standalone browser bundle that includes runtime dependencies (for convenience).
-
-- If you use npm / a bundler, run:
-
-```bash
-npm install dom-to-pptx
-```
-
-- For direct browser usage (single script tag), use the bundled file that already includes `pptxgenjs` and `html2canvas`:
-
-```html
-<script src="/node_modules/dom-to-pptx/dist/dom-to-pptx.bundle.js"></script>
-<script>
-  domToPptx.exportToPptx('#slide-container', { fileName: 'report.pptx' });
-</script>
-```
-
-If you prefer to manage `pptxgenjs` yourself (smaller bundle), the legacy `dist/dom-to-pptx.min.js` remains available and expects `pptxgenjs` to be loaded separately.
-
-### Notes for bundler users (Vite / Rollup / Webpack)
-
-- **ESM/CJS builds keep `pptxgenjs` external.**
-  - The module outputs (`dist/dom-to-pptx.mjs` and `dist/dom-to-pptx.cjs`) _do not_ bundle `pptxgenjs` so that modern bundlers (like Vite) won't accidentally inline Node-only shims from that dependency. This keeps the ESM artifact safe for browser toolchains but requires you to have `pptxgenjs` installed in your project when using the module imports:
-
-```bash
-npm install dom-to-pptx pptxgenjs
-```
-
-- **If you get pre-bundling errors in Vite** (e.g., esbuild complaining about `https`, `stream`, or other Node built-ins), either install `pptxgenjs` in your app or use the provided standalone UMD bundle.
-
-- **Vite quick-workarounds**:
-  1. Use the bundled UMD in your dev server by adding a resolve alias in `vite.config.js`:
-
-  ```js
-  import { defineConfig } from 'vite';
-
-  export default defineConfig({
-    resolve: {
-      alias: {
-        'dom-to-pptx': '/node_modules/dom-to-pptx/dist/dom-to-pptx.bundle.js',
-      },
-    },
-  });
-  ```
-
-  2. Or exclude the package from Vite's dependency optimizer (temporary):
-
-  ```js
-  // vite.config.js
-  export default {
-    optimizeDeps: {
-      exclude: ['dom-to-pptx'],
-    },
-  };
-  ```
-
-Using the standalone bundle is the simplest path for direct browser usage; using the module build is best for app projects that manage dependencies themselves.
-
-Legacy usage note:
-
-```html
-<!-- Load pptxgenjs first -->
-<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@latest/dist/pptxgen.bundle.js"></script>
-<!-- html2canvas is required by the legacy dom-to-pptx build for backdrop-filter and canvas image processing -->
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<!-- Then load the legacy dom-to-pptx file that expects the above libs -->
-<script src="/node_modules/dom-to-pptx/dist/dom-to-pptx.min.js"></script>
-<script>
-  document.getElementById('download-btn').addEventListener('click', async () => {
-    await domToPptx.exportToPptx('#slide-container', { fileName: 'dashboard-report.pptx' });
-  });
-</script>
-```

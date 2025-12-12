@@ -1,3 +1,4 @@
+// rollup.config.js
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import polyfillNode from 'rollup-plugin-polyfill-node';
@@ -30,9 +31,6 @@ const configModules = {
     },
   ],
   plugins: [resolve(), commonjs()],
-  // Keep pptxgenjs external for module builds so bundlers like Vite don't attempt to resolve Node-only
-  // builtins that may be present in pptxgenjs; consumers should install `pptxgenjs` alongside this package
-  // when using ESM/CJS builds.
   external: ['pptxgenjs'],
 };
 
@@ -45,11 +43,19 @@ const configBundle = {
     name: 'domToPptx',
     esModule: false,
     sourcemap: false,
+    intro: 'var global = typeof self !== "undefined" ? self : this;', 
   },
-  // Use a node polyfill plugin first so Node built-ins (stream, buffer, util, events, etc.)
-  // are shimmed for browser environments when creating the standalone bundle.
-  plugins: [polyfillNode(), resolve(), commonjs()],
-  // Bundle everything for the standalone artifact.
+  plugins: [
+    // 1. Resolve must be configured to pick browser versions of dependencies
+    resolve({
+      browser: true, 
+      preferBuiltins: false 
+    }),
+    // 2. CommonJS transforms CJS modules to ESM
+    commonjs(),
+    // 3. Polyfills for any remaining Node logic (like Buffer in older JSZip versions)
+    polyfillNode(),
+  ],
   external: [],
 };
 
