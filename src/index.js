@@ -24,7 +24,8 @@ import {
   generateCustomShapeSVG,
   getUsedFontFamilies,
   getAutoDetectedFonts,
-  extractTableData
+  extractTableData,
+  computeTableCellFill
 } from './utils.js';
 import { getProcessedImage } from './image-processor.js';
 
@@ -468,7 +469,14 @@ function prepareRenderItem(
           textParts: [
             {
               text: textContent,
-              options: getTextStyle(style, config.scale),
+              options: (() => {
+                const opts = getTextStyle(style, config.scale, textContent, globalOptions);
+                const bg = parseColor(style.backgroundColor);
+                if (opts.highlight && bg.hex && bg.opacity > 0 && !isTextContainer(parent)) {
+                  delete opts.highlight;
+                }
+                return opts;
+              })(),
             },
           ],
           options: { x, y, w: unrotatedW, h: unrotatedH, margin: 0, autoFit: false },
@@ -504,12 +512,41 @@ function prepareRenderItem(
   const items = [];
 
   if (node.tagName === 'TABLE') {
-    const tableData = extractTableData(node, config.scale);
+    const tableData = extractTableData(node, config.scale, { ...globalOptions, root: config.root });
+    const cellBgItems = [];
+    const renderCellBg = globalOptions.tableConfig?.renderCellBackgrounds !== false;
+
+    if (renderCellBg) {
+      const trList = node.querySelectorAll('tr');
+      trList.forEach((tr) => {
+        const cellList = Array.from(tr.children).filter((c) => ['TD', 'TH'].includes(c.tagName));
+        cellList.forEach((cell) => {
+          const style = window.getComputedStyle(cell);
+          const fill = computeTableCellFill(style, cell, config.root, globalOptions);
+          if (!fill) return;
+
+          const rect = cell.getBoundingClientRect();
+          const wIn = rect.width * PX_TO_INCH * config.scale;
+          const hIn = rect.height * PX_TO_INCH * config.scale;
+          const xIn = config.offX + (rect.left - config.rootX) * PX_TO_INCH * config.scale;
+          const yIn = config.offY + (rect.top - config.rootY) * PX_TO_INCH * config.scale;
+
+          cellBgItems.push({
+            type: 'shape',
+            zIndex: effectiveZIndex - 0.5,
+            domOrder,
+            shapeType: 'rect',
+            options: { x: xIn, y: yIn, w: wIn, h: hIn, fill: fill, line: { color: 'FFFFFF', transparency: 100 } }
+          });
+        });
+      });
+    }
 
     // Calculate total table width to ensure X position is correct
     // (Though x calculation above usually handles it, tables can be finicky)
     return {
       items: [
+        ...cellBgItems,
         {
           type: 'table',
           zIndex: effectiveZIndex,
@@ -601,7 +638,7 @@ function prepareRenderItem(
       }
 
       // 3. Extract Text Parts
-      const parts = collectListParts(child, liStyle, config.scale);
+      const parts = collectListParts(child, liStyle, config.scale, globalOptions);
 
       if (parts.length > 0) {
         parts.forEach((p) => {
@@ -959,7 +996,7 @@ function prepareRenderItem(
       if (nodeStyle.textTransform === 'lowercase') textVal = textVal.toLowerCase();
 
       if (textVal.length > 0) {
-        const textOpts = getTextStyle(nodeStyle, config.scale);
+        const textOpts = getTextStyle(nodeStyle, config.scale, textVal, globalOptions);
 
         // BUG FIX: Numbers 1 and 2 having background.
         // If this is a naked Text Node (nodeType 3), it inherits style from the parent container.
@@ -1202,6 +1239,8 @@ function prepareRenderItem(
 
 function isComplexHierarchy(root) {
   // Use a simple tree traversal to find forbidden elements in the list structure
+  if (root?.getAttribute?.('data-pptx-list') === 'complex') return true;
+
   const stack = [root];
   while (stack.length > 0) {
     const el = stack.pop();
@@ -1210,6 +1249,27 @@ function isComplexHierarchy(root) {
     if (el.tagName === 'LI') {
       const s = window.getComputedStyle(el);
       if (s.display === 'flex' || s.display === 'grid' || s.display === 'inline-flex') return true;
+
+      // Custom list items (e.g., list-style: none + structured children)
+      const listStyleType = s.listStyleType || s.listStyle;
+      if (listStyleType === 'none') {
+        const hasStructuredChild = Array.from(el.children).some((child) => {
+          const cs = window.getComputedStyle(child);
+          const display = cs.display || '';
+          if (!display.includes('inline')) return true;
+
+          const bg = parseColor(cs.backgroundColor);
+          if (bg.hex && bg.opacity > 0) return true;
+
+          const bw = parseFloat(cs.borderWidth) || 0;
+          const bc = parseColor(cs.borderColor);
+          if (bw > 0 && bc.opacity > 0) return true;
+
+          return false;
+        });
+
+        if (hasStructuredChild) return true;
+      }
     }
 
     // 2. Media / Icons
@@ -1227,7 +1287,7 @@ function isComplexHierarchy(root) {
   return false;
 }
 
-function collectListParts(node, parentStyle, scale) {
+function collectListParts(node, parentStyle, scale, globalOptions) {
   const parts = [];
 
   // Check for CSS Content (::before) - often used for icons
@@ -1240,7 +1300,7 @@ function collectListParts(node, parentStyle, scale) {
       if (cleanContent.trim()) {
         parts.push({
           text: cleanContent + ' ', // Add space after icon
-          options: getTextStyle(window.getComputedStyle(node), scale),
+          options: getTextStyle(window.getComputedStyle(node), scale, cleanContent, globalOptions),
         });
       }
     }
@@ -1255,13 +1315,13 @@ function collectListParts(node, parentStyle, scale) {
         const styleToUse = node.nodeType === 1 ? window.getComputedStyle(node) : parentStyle;
         parts.push({
           text: val,
-          options: getTextStyle(styleToUse, scale),
+          options: getTextStyle(styleToUse, scale, val, globalOptions),
         });
       }
     } else if (child.nodeType === 1) {
       // Element (span, i, b)
       // Recurse
-      parts.push(...collectListParts(child, parentStyle, scale));
+      parts.push(...collectListParts(child, parentStyle, scale, globalOptions));
     }
   });
 
