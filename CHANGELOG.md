@@ -1,14 +1,17 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
 ## [1.1.4] - 2026-01-19
 
 ### Added
+
 - **Tailwind CSS v4 Support**: Added robust color parsing for modern CSS color formats (e.g., `oklch`, `lab`, `display-p3`) used by Tailwind v4. The library now uses canvas-based normalization to support any valid CSS color.
-- **Text Gradient Fallback**: Text with CSS gradients (e.g., `background-clip: text`) now gracefully falls back to the *first color* of the gradient string instead of rendering as invisible or black.
+- **Text Gradient Fallback**: Text with CSS gradients (e.g., `background-clip: text`) now gracefully falls back to the _first color_ of the gradient string instead of rendering as invisible or black.
 - **List Marker Customization**: Support for `::marker` pseudo-element styles. Custom bullet colors and font sizes are now preserved in the generated PowerPoint.
 
 ### Fixed
+
 - **Text Alignment**: Fixed an issue where text containers were slightly shorter than browser rendering, causing overlap with subsequent elements. Added a precision buffer to account for font metric differences.
 - **Line Breaks**: Fixed an issue where `<br>` tags with surrounding whitespace caused double line breaks in the output.
 - **Missing Elements (Cone Fix)**: Fixed a bug where empty elements with solid backgrounds and partial border radii (e.g., decorative shapes) were skipped during rasterization. We now generate a high-fidelity Vector SVG for these shapes.
@@ -17,17 +20,20 @@ All notable changes to this project will be documented in this file.
 ## [1.1.3] - 2026-01-12
 
 ### Added
+
 - **Table Supprt**: Added support for table elements like `<table>`, `<th>` `<td>`, `<tr>` with basic css formatting.
 
 ## [1.1.2] - 2026-01-08
 
 ### Added
+
 - **Canvas Support**: Added support for `<canvas>` elements. Libraries like **ECharts** and **Chart.js** now render correctly as images instead of blank spaces.
 - **Backend Upload Support**: Added `skipDownload` option to `exportToPptx`. The function now returns a `Promise<Blob>`, allowing developers to upload the generated file to a server instead of triggering a browser download.
 - **List Configuration**: Added `listConfig` option to manually override bullet colors and spacing (before/after) globally.
 - **Icon Support in Lists**: Added logic to capture pseudo-element content (`::before`), ensuring icons (e.g., FontAwesome) inside list items are rendered correctly.
 
 ### Fixed
+
 - **Native Lists**: HTML `<ul>` and `<ol>` lists are now rendered as a single native PowerPoint text box with real bullets, rather than disconnected text shapes.
 - **Line Height Calculation**: Fixed an issue where pixel-based CSS `line-height` was interpreted as a multiplier in PowerPoint, causing text to overlap or crush.
 - **Paragraph Spacing**: CSS `margin-top` and `margin-bottom` are now correctly converted to PowerPoint points (`paraSpaceBefore` / `paraSpaceAfter`).

@@ -6,7 +6,12 @@ Most HTML-to-PPTX libraries fail when faced with modern web design. They break o
 
 **dom-to-pptx** is different. It is a **Coordinate Scraper & Style Engine** that traverses your DOM, calculates the exact computed styles of every element (Flexbox/Grid positions, complex gradients, shadows), and mathematically maps them to native PowerPoint shapes and text boxes. The result is a fully editable, vector-sharp presentation that looks exactly like your web view.
 
-### 🛠️ Updates in v1.1.4
+### 🛠️ Updates in v1.1.5
+
+- **SVG Vector Export:** New `svgAsVector` option keeps SVG elements as vectors instead of rasterizing them. This enables "Convert to Shape" in PowerPoint for editable charts and graphics.
+
+### Updates in v1.1.4
+
 - **Tailwind CSS v4 Support** (oklch colors)
 - **Text Gradient Fallback**
 - **List Customization & Layout fixes**
@@ -96,7 +101,22 @@ document.getElementById('export-btn').addEventListener('click', async () => {
 });
 ```
 
-### 4. Browser Usage (Script Tags)
+### 4. SVG Vector Export (Editable Charts)
+
+If your HTML contains SVG elements (like charts), you can keep them as vectors for editing in PowerPoint:
+
+```javascript
+import { exportToPptx } from 'dom-to-pptx';
+
+await exportToPptx('#slide-with-charts', {
+  fileName: 'editable-charts.pptx',
+  svgAsVector: true, // SVGs remain as vectors, not rasterized
+});
+```
+
+In PowerPoint, right-click the SVG image and select **"Convert to Shape"** (or **Group > Ungroup**) to make it fully editable.
+
+### 5. Browser Usage (Script Tags)
 
 You can use `dom-to-pptx` directly via CDN. The bundle includes all dependencies.
 
@@ -271,15 +291,17 @@ Returns: `Promise<Blob>` - Resolves with the generated PPTX file data (Blob).
 
 **Options Object:**
 
-| Key              | Type      | Default         | Description                                                                                              |
-| :--------------- | :-------- | :-------------- | :------------------------------------------------------------------------------------------------------- |
-| `fileName`       | `string`  | `"export.pptx"` | The name of the downloaded file.                                                                         |
-| `autoEmbedFonts` | `boolean` | `true`          | Automatically detect and embed used fonts.                                                               |
-| `fonts`          | `Array`   | `[]`            | Manual array of font objects: `{ name, url }`.                                                           |
-| `skipDownload`   | `boolean` | `false`         | If `true`, the file is not downloaded automatically. Use the returned `Blob` for custom handling (upload). |
+| Key              | Type      | Default         | Description                                                                                                   |
+| :--------------- | :-------- | :-------------- | :------------------------------------------------------------------------------------------------------------ |
+| `fileName`       | `string`  | `"export.pptx"` | The name of the downloaded file.                                                                              |
+| `autoEmbedFonts` | `boolean` | `true`          | Automatically detect and embed used fonts.                                                                    |
+| `fonts`          | `Array`   | `[]`            | Manual array of font objects: `{ name, url }`.                                                                |
+| `skipDownload`   | `boolean` | `false`         | If `true`, the file is not downloaded automatically. Use the returned `Blob` for custom handling (upload).    |
+| `svgAsVector`    | `boolean` | `false`         | If `true`, keeps SVG elements as vectors (not rasterized). Enables "Convert to Shape" in PowerPoint.          |
 | `listConfig`     | `object`  | `undefined`     | Global overrides for list styles. Structure: `{ color: string, spacing: { before: number, after: number } }`. |
 
 **List Configuration Example:**
+
 ```javascript
 listConfig: {
   spacing: {

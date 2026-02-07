@@ -57,9 +57,7 @@ export function extractTableData(node, scale, options = {}) {
   const trList = node.querySelectorAll('tr');
   trList.forEach((tr) => {
     const rowData = [];
-    const cellList = Array.from(tr.children).filter((c) =>
-      ['TD', 'TH'].includes(c.tagName)
-    );
+    const cellList = Array.from(tr.children).filter((c) => ['TD', 'TH'].includes(c.tagName));
 
     cellList.forEach((cell) => {
       const style = window.getComputedStyle(cell);
@@ -90,7 +88,7 @@ export function extractTableData(node, scale, options = {}) {
         padding[0] * 72, // top
         padding[1] * 72, // right
         padding[2] * 72, // bottom
-        padding[3] * 72  // left
+        padding[3] * 72, // left
       ];
 
       // E. Borders
@@ -123,8 +121,8 @@ export function extractTableData(node, scale, options = {}) {
             top: borderTop,
             right: borderRight,
             bottom: borderBottom,
-            left: borderLeft
-          }
+            left: borderLeft,
+          },
         },
       });
     });
@@ -419,8 +417,16 @@ export function parseColor(str) {
   if (computed.startsWith('#')) {
     let hex = computed.slice(1);
     let opacity = 1;
-    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-    if (hex.length === 4) hex = hex.split('').map(c => c + c).join('');
+    if (hex.length === 3)
+      hex = hex
+        .split('')
+        .map((c) => c + c)
+        .join('');
+    if (hex.length === 4)
+      hex = hex
+        .split('')
+        .map((c) => c + c)
+        .join('');
     if (hex.length === 8) {
       opacity = parseInt(hex.slice(6), 16) / 255;
       hex = hex.slice(0, 6);
@@ -585,7 +591,9 @@ export function getTextStyle(style, scale, text = '', options = {}) {
     ...(paraSpaceBefore > 0 && { paraSpaceBefore }),
     ...(paraSpaceAfter > 0 && { paraSpaceAfter }),
     // Map background color to highlight if present
-    ...(parseColor(style.backgroundColor).hex ? { highlight: parseColor(style.backgroundColor).hex } : {}),
+    ...(parseColor(style.backgroundColor).hex
+      ? { highlight: parseColor(style.backgroundColor).hex }
+      : {}),
   };
 }
 
@@ -641,6 +649,13 @@ export function isTextContainer(node) {
     const hasBorder =
       parseFloat(style.borderWidth) > 0 && parseColor(style.borderColor).opacity > 0;
 
+    if (hasVisibleBg || hasBorder) {
+      // Relaxed check: Allow inline elements with background/border to be treated as text.
+      // They will be rendered as highlighted text runs (no border support in text runs though).
+      // This preserves text flow for "badges".
+      // return false;
+    }
+
     // 4. Check for empty shapes (visual objects without text, like dots)
     const hasContent = el.textContent.trim().length > 0;
     if (!hasContent && (hasVisibleBg || hasBorder)) {
@@ -667,6 +682,9 @@ export function getRotation(transformStr) {
   return Math.round(Math.atan2(b, a) * (180 / Math.PI));
 }
 
+/**
+ * Converts an SVG node to a PNG data URL (rasterized)
+ */
 export function svgToPng(node) {
   return new Promise((resolve) => {
     const clone = node.cloneNode(true);
@@ -674,39 +692,7 @@ export function svgToPng(node) {
     const width = rect.width || 300;
     const height = rect.height || 150;
 
-    function inlineStyles(source, target) {
-      const computed = window.getComputedStyle(source);
-      const properties = [
-        'fill',
-        'stroke',
-        'stroke-width',
-        'stroke-linecap',
-        'stroke-linejoin',
-        'opacity',
-        'font-family',
-        'font-size',
-        'font-weight',
-      ];
-
-      if (computed.fill === 'none') target.setAttribute('fill', 'none');
-      else if (computed.fill) target.style.fill = computed.fill;
-
-      if (computed.stroke === 'none') target.setAttribute('stroke', 'none');
-      else if (computed.stroke) target.style.stroke = computed.stroke;
-
-      properties.forEach((prop) => {
-        if (prop !== 'fill' && prop !== 'stroke') {
-          const val = computed[prop];
-          if (val && val !== 'auto') target.style[prop] = val;
-        }
-      });
-
-      for (let i = 0; i < source.children.length; i++) {
-        if (target.children[i]) inlineStyles(source.children[i], target.children[i]);
-      }
-    }
-
-    inlineStyles(node, clone);
+    inlineSvgStyles(node, clone);
     clone.setAttribute('width', width);
     clone.setAttribute('height', height);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
@@ -728,6 +714,74 @@ export function svgToPng(node) {
     img.onerror = () => resolve(null);
     img.src = svgUrl;
   });
+}
+
+/**
+ * Converts an SVG node to an SVG data URL (preserves vector format)
+ * This allows "Convert to Shape" in PowerPoint
+ */
+export function svgToSvg(node) {
+  return new Promise((resolve) => {
+    try {
+      const clone = node.cloneNode(true);
+      const rect = node.getBoundingClientRect();
+      const width = rect.width || 300;
+      const height = rect.height || 150;
+
+      inlineSvgStyles(node, clone);
+      clone.setAttribute('width', width);
+      clone.setAttribute('height', height);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+      // Ensure xmlns:xlink is present for any xlink:href attributes
+      if (clone.querySelector('[*|href]') || clone.innerHTML.includes('xlink:')) {
+        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+      }
+
+      const xml = new XMLSerializer().serializeToString(clone);
+      // Use base64 encoding for better compatibility with PowerPoint
+      const svgUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(xml)))}`;
+      resolve(svgUrl);
+    } catch (e) {
+      console.warn('SVG serialization failed:', e);
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Helper to inline computed styles into an SVG clone
+ */
+function inlineSvgStyles(source, target) {
+  const computed = window.getComputedStyle(source);
+  const properties = [
+    'fill',
+    'stroke',
+    'stroke-width',
+    'stroke-linecap',
+    'stroke-linejoin',
+    'opacity',
+    'font-family',
+    'font-size',
+    'font-weight',
+  ];
+
+  if (computed.fill === 'none') target.setAttribute('fill', 'none');
+  else if (computed.fill) target.style.fill = computed.fill;
+
+  if (computed.stroke === 'none') target.setAttribute('stroke', 'none');
+  else if (computed.stroke) target.style.stroke = computed.stroke;
+
+  properties.forEach((prop) => {
+    if (prop !== 'fill' && prop !== 'stroke') {
+      const val = computed[prop];
+      if (val && val !== 'auto') target.style[prop] = val;
+    }
+  });
+
+  for (let i = 0; i < source.children.length; i++) {
+    if (target.children[i]) inlineSvgStyles(source.children[i], target.children[i]);
+  }
 }
 
 export function getVisibleShadow(shadowStr, scale) {

@@ -1,6 +1,6 @@
 {
   "name": "dom-to-pptx",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "A client-side library that converts any HTML element into a fully editable PowerPoint slide. **dom-to-pptx** transforms DOM structures into pixel-accurate `.pptx` content, preserving gradients, shadows, rounded images, and responsive layouts. It translates CSS Flexbox/Grid, linear-gradients, box-shadows, and typography into native PowerPoint shapes, enabling precise, design-faithful slide generation directly from the browser.",
   "main": "dist/dom-to-pptx.cjs",
   "module": "dist/dom-to-pptx.mjs",
@@ -13,7 +13,8 @@
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "npx rollup -c",
     "lint": "eslint .",
     "format": "prettier --write ."
@@ -66,11 +67,13 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "events": "^3.3.0",
+    "jsdom": "^28.0.0",
     "prettier": "^3.7.3",
     "process": "^0.11.10",
     "rollup-plugin-polyfill-node": "^0.10.1",
     "stream-browserify": "^3.0.0",
-    "util": "^0.12.5"
+    "util": "^0.12.5",
+    "vitest": "^4.0.18"
   },
   "dependencies": {
     "fonteditor-core": "^2.6.3",

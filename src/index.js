@@ -15,6 +15,7 @@ import {
   generateGradientSVG,
   getRotation,
   svgToPng,
+  svgToSvg,
   getPadding,
   getSoftEdges,
   generateBlurredSVG,
@@ -39,6 +40,7 @@ const PX_TO_INCH = 1 / PPI;
  * @param {string} [options.fileName]
  * @param {boolean} [options.skipDownload=false] - If true, prevents automatic download
  * @param {Object} [options.listConfig] - Config for bullets
+ * @param {boolean} [options.svgAsVector=false] - If true, keeps SVG as vector (for Convert to Shape in PowerPoint)
  * @returns {Promise<Blob>} - Returns the generated PPTX Blob
  */
 export async function exportToPptx(target, options = {}) {
@@ -260,8 +262,8 @@ async function processSlide(root, slide, pptx, globalOptions = {}) {
         colW: item.tableData.colWidths, // Essential for correct layout
         autoPage: false,
         // Remove default table styles so our extracted CSS applies cleanly
-        border: { type: "none" },
-        fill: { color: "FFFFFF", transparency: 100 }
+        border: { type: 'none' },
+        fill: { color: 'FFFFFF', transparency: 100 },
       });
     }
   }
@@ -552,10 +554,10 @@ function prepareRenderItem(
           zIndex: effectiveZIndex,
           domOrder,
           tableData: tableData,
-          options: { x, y, w: unrotatedW, h: unrotatedH }
-        }
+          options: { x, y, w: unrotatedW, h: unrotatedH },
+        },
       ],
-      stopRecursion: true // Important: Don't process TR/TD as separate shapes
+      stopRecursion: true, // Important: Don't process TR/TD as separate shapes
     };
   }
 
@@ -617,7 +619,7 @@ function prepareRenderItem(
 
       // 2. Calculate Dynamic Indent (Respects padding-left)
       // Visual Indent = Distance from UL left edge to LI Content left edge.
-      // PptxGenJS 'indent' = Space between bullet and text? 
+      // PptxGenJS 'indent' = Space between bullet and text?
       // Actually PptxGenJS 'indent' allows setting the hanging indent.
       // We calculate the TOTAL visual offset from the parent container.
       // 1 px = 0.75 pt (approx, standard DTP).
@@ -660,8 +662,8 @@ function prepareRenderItem(
               ...firstPartInfo, // Inherit base props (fontFace, etc.)
               color: bullet.color || firstPartInfo.color,
               fontSize: bullet.fontSize || firstPartInfo.fontSize,
-              bullet: bullet
-            }
+              bullet: bullet,
+            },
           };
 
           // Don't duplicate transparent or empty color from firstPart if bullet has one
@@ -744,7 +746,7 @@ function prepareRenderItem(
       type: 'image',
       zIndex,
       domOrder,
-      options: { x, y, w, h, rotate: rotation, data: null }
+      options: { x, y, w, h, rotate: rotation, data: null },
     };
 
     const job = async () => {
@@ -779,7 +781,10 @@ function prepareRenderItem(
     };
 
     const job = async () => {
-      const processed = await svgToPng(node);
+      // Use svgToSvg for vector output (Convert to Shape in PowerPoint)
+      // Use svgToPng for rasterized output (pixel perfect)
+      const converter = globalOptions.svgAsVector ? svgToSvg : svgToPng;
+      const processed = await converter(node);
       if (processed) item.options.data = processed;
       else item.skip = true;
     };
@@ -881,27 +886,23 @@ function prepareRenderItem(
   const isTxt = isTextContainer(node);
 
   if (hasPartialBorderRadius && tempBg.hex && !isTxt) {
-    const shapeSvg = generateCustomShapeSVG(
-      widthPx,
-      heightPx,
-      tempBg.hex,
-      tempBg.opacity,
-      {
-        tl: parseFloat(style.borderTopLeftRadius) || 0,
-        tr: parseFloat(style.borderTopRightRadius) || 0,
-        br: parseFloat(style.borderBottomRightRadius) || 0,
-        bl: parseFloat(style.borderBottomLeftRadius) || 0,
-      }
-    );
+    const shapeSvg = generateCustomShapeSVG(widthPx, heightPx, tempBg.hex, tempBg.opacity, {
+      tl: parseFloat(style.borderTopLeftRadius) || 0,
+      tr: parseFloat(style.borderTopRightRadius) || 0,
+      br: parseFloat(style.borderBottomRightRadius) || 0,
+      bl: parseFloat(style.borderBottomLeftRadius) || 0,
+    });
 
     return {
-      items: [{
-        type: 'image',
-        zIndex,
-        domOrder,
-        options: { data: shapeSvg, x, y, w, h, rotate: rotation },
-      }],
-      stopRecursion: true // Treat as leaf
+      items: [
+        {
+          type: 'image',
+          zIndex,
+          domOrder,
+          options: { data: shapeSvg, x, y, w, h, rotate: rotation },
+        },
+      ],
+      stopRecursion: true, // Treat as leaf
     };
   }
 
