@@ -1,0 +1,20 @@
+services:
+  dom-to-pptx:
+    build: .
+    ports:
+      - "15000:3000"
+    environment:
+      - PORT=3000
+      - POOL_MAX=5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

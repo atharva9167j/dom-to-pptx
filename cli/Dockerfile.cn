@@ -1,0 +1,22 @@
+FROM node:18-slim
+
+# 使用阿里云镜像源
+RUN echo "deb http://mirrors.aliyun.com/debian/ bookworm main" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/debian/ bookworm-updates main" >> /etc/apt/sources.list
+
+# 安装 Chromium
+RUN apt-get update && apt-get install -y \
+  chromium \
+  fonts-freefont-ttf \
+  --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+WORKDIR /app
+COPY package.json html2pptx.js ./
+RUN npm install --omit=dev
+
+WORKDIR /data
+ENTRYPOINT ["node", "/app/html2pptx.js"]

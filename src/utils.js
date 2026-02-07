@@ -34,9 +34,10 @@ function getTableBorder(style, side, scale) {
 /**
  * Extracts native table data for PptxGenJS.
  */
-export function extractTableData(node, scale) {
+export function extractTableData(node, scale, options = {}) {
   const rows = [];
   const colWidths = [];
+  const root = options.root || null;
 
   // 1. Calculate Column Widths based on the first row of cells
   // We look at the first <tr>'s children to determine visual column widths.
@@ -63,11 +64,10 @@ export function extractTableData(node, scale) {
       const cellText = cell.innerText.replace(/[\n\r\t]+/g, ' ').trim();
 
       // A. Text Style
-      const textStyle = getTextStyle(style, scale);
+      const textStyle = getTextStyle(style, scale, cellText, options);
 
       // B. Cell Background
-      const bg = parseColor(style.backgroundColor);
-      const fill = bg.hex && bg.opacity > 0 ? { color: bg.hex } : null;
+      const fill = computeTableCellFill(style, cell, root, options);
 
       // C. Alignment
       let align = 'left';
@@ -198,6 +198,73 @@ function mapDashType(style) {
   if (style === 'dashed') return 'dash';
   if (style === 'dotted') return 'dot';
   return 'solid';
+}
+
+function hexToRgb(hex) {
+  const clean = (hex || '').replace('#', '').trim();
+  if (clean.length !== 6) return null;
+  const num = parseInt(clean, 16);
+  if (Number.isNaN(num)) return null;
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255,
+  };
+}
+
+function rgbToHex(rgb) {
+  const toHex = (v) => v.toString(16).padStart(2, '0').toUpperCase();
+  return `${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`;
+}
+
+function blendHex(baseHex, overlayHex, alpha) {
+  const base = hexToRgb(baseHex);
+  const over = hexToRgb(overlayHex);
+  if (!base || !over) return overlayHex;
+  const a = Math.max(0, Math.min(1, alpha));
+  const r = Math.round(base.r * (1 - a) + over.r * a);
+  const g = Math.round(base.g * (1 - a) + over.g * a);
+  const b = Math.round(base.b * (1 - a) + over.b * a);
+  return rgbToHex({ r, g, b });
+}
+
+function resolveTableBaseColor(node, root) {
+  // Start from parent to avoid picking the cell's own semi-transparent fill
+  let el = node?.parentElement || null;
+  while (el && el !== document.body) {
+    const style = window.getComputedStyle(el);
+    const bg = parseColor(style.backgroundColor);
+    if (bg.hex && bg.opacity > 0) return bg.hex;
+
+    const bgClip = style.webkitBackgroundClip || style.backgroundClip;
+    const bgImage = style.backgroundImage;
+    if (bgClip !== 'text' && bgImage && bgImage.includes('gradient')) {
+      const fallback = getGradientFallbackColor(bgImage);
+      if (fallback) {
+        const parsed = parseColor(fallback);
+        if (parsed.hex) return parsed.hex;
+      }
+    }
+
+    if (el === root) break;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+export function computeTableCellFill(style, cell, root, options = {}) {
+  const bg = parseColor(style.backgroundColor);
+  if (!bg.hex || bg.opacity <= 0) return null;
+
+  const flatten = options.tableConfig?.flattenTransparentFill !== false;
+  if (bg.opacity < 1 && flatten) {
+    const baseHex = resolveTableBaseColor(cell, root) || 'FFFFFF';
+    const blended = blendHex(baseHex, bg.hex, bg.opacity);
+    return { color: blended };
+  }
+
+  const transparency = Math.max(0, Math.min(100, (1 - bg.opacity) * 100));
+  return transparency > 0 ? { color: bg.hex, transparency } : { color: bg.hex };
 }
 
 /**
@@ -414,7 +481,62 @@ export function getSoftEdges(filterStr, scale) {
   return null;
 }
 
-export function getTextStyle(style, scale) {
+const DEFAULT_CJK_FONTS = [
+  'PingFang SC',
+  'Hiragino Sans GB',
+  'Microsoft YaHei',
+  'Noto Sans CJK SC',
+  'Source Han Sans SC',
+  'WenQuanYi Micro Hei',
+  'SimHei',
+  'SimSun',
+  'STHeiti'
+];
+
+function normalizeFontList(fontFamily) {
+  if (!fontFamily || typeof fontFamily !== 'string') return [];
+  return fontFamily
+    .split(',')
+    .map((f) => f.trim().replace(/['"]/g, ''))
+    .filter(Boolean);
+}
+
+function containsCjk(text) {
+  if (!text) return false;
+  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(text);
+}
+
+function normalizeCjkFallbacks(options) {
+  if (!options) return [];
+  const raw =
+    options.fontFallbacks?.cjk ??
+    options.cjkFonts ??
+    options.cjkFont ??
+    [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list
+    .map((f) => (typeof f === 'string' ? f.trim() : String(f)))
+    .filter(Boolean);
+}
+
+function pickFontFace(fontFamily, text, options) {
+  const fontList = normalizeFontList(fontFamily);
+  const primary = fontList[0] || 'Arial';
+
+  if (!containsCjk(text)) return primary;
+
+  const lowered = fontList.map((f) => f.toLowerCase());
+  const configured = normalizeCjkFallbacks(options);
+  if (configured.length > 0) {
+    const match = configured.find((f) => lowered.includes(f.toLowerCase()));
+    return match || configured[0];
+  }
+
+  const autoMatch = DEFAULT_CJK_FONTS.find((f) => lowered.includes(f.toLowerCase()));
+  return autoMatch || primary;
+}
+
+export function getTextStyle(style, scale, text = '', options = {}) {
   let colorObj = parseColor(style.color);
 
   const bgClip = style.webkitBackgroundClip || style.backgroundClip;
@@ -455,9 +577,11 @@ export function getTextStyle(style, scale) {
   if (mt > 0) paraSpaceBefore = mt * 0.75 * scale;
   if (mb > 0) paraSpaceAfter = mb * 0.75 * scale;
 
+  const fontFace = pickFontFace(style.fontFamily, text, options);
+
   return {
     color: colorObj.hex || '000000',
-    fontFace: style.fontFamily.split(',')[0].replace(/['"]/g, ''),
+    fontFace: fontFace,
     fontSize: Math.floor(fontSizePx * 0.75 * scale),
     bold: parseInt(style.fontWeight) >= 600,
     italic: style.fontStyle === 'italic',
@@ -535,6 +659,11 @@ export function isTextContainer(node) {
     // 4. Check for empty shapes (visual objects without text, like dots)
     const hasContent = el.textContent.trim().length > 0;
     if (!hasContent && (hasVisibleBg || hasBorder)) {
+      return false;
+    }
+
+    // If element has background/border and is not inline, treat as layout block
+    if ((hasVisibleBg || hasBorder) && !isInlineDisplay) {
       return false;
     }
 
@@ -872,10 +1001,8 @@ export function getUsedFontFamilies(root) {
     if (node.nodeType === 1) {
       // Element
       const style = window.getComputedStyle(node);
-      const fontList = style.fontFamily.split(',');
-      // The first font in the stack is the primary one
-      const primary = fontList[0].trim().replace(/['"]/g, '');
-      if (primary) families.add(primary);
+      const fontList = normalizeFontList(style.fontFamily);
+      fontList.forEach((f) => families.add(f));
     }
     for (const child of node.childNodes) {
       scan(child);
