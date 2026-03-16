@@ -22,40 +22,38 @@ const onwarn = (warning, warn) => {
 };
 
 // --- CONFIG A: Library (NPM) ---
-// Does NOT include dependencies. Consumers (Webpack/Vite) will bundle them.
 const configLibrary = {
   input,
   output: [
     {
       file: 'dist/dom-to-pptx.mjs',
       format: 'es',
-      sourcemap: true,
+      sourcemap: true
     },
     {
       file: 'dist/dom-to-pptx.cjs',
       format: 'cjs',
       sourcemap: true,
-      exports: 'named',
-    },
+      exports: 'named'
+    }
   ],
   plugins: [
     resolve({ preferBuiltins: true }), // Allow node resolution
     commonjs(),
-    json(),
+    json()
   ],
   // Mark all dependencies as external so they aren't bundled into the .mjs/.cjs files
   external: ['pptxgenjs', 'html2canvas', 'jszip', 'fonteditor-core', 'opentype.js', 'pako'],
-  onwarn,
+  onwarn
 };
 
 // --- CONFIG B: Browser Bundle (CDN) ---
-// Includes EVERYTHING (Polyfills + Dependencies). Standalone file.
 const configBundle = {
   input,
   output: {
     file: 'dist/dom-to-pptx.bundle.js',
     format: 'umd',
-    name: 'domToPptx',
+    name: 'dom247bToPptx', // changed to reduce collision risk
     esModule: false,
     sourcemap: false,
     // Inject global variables for browser compatibility
@@ -63,12 +61,7 @@ const configBundle = {
       var global = typeof self !== "undefined" ? self : this; 
       var process = { env: { NODE_ENV: "production" } };
     `,
-    globals: {
-      // If you want users to load PptxGenJS separately via script tag, keep this.
-      // If you want to bundle PptxGenJS inside, remove it from external/globals.
-      // Usually for "bundle.js", we bundle everything except maybe very large libs.
-      // Based on your previous config, we are bundling everything.
-    },
+    globals: {}
   },
   plugins: [
     // 1. JSON plugin (needed for some deps)
@@ -77,20 +70,20 @@ const configBundle = {
     // 2. Resolve browser versions of modules
     resolve({
       browser: true,
-      preferBuiltins: false, // Force use of browser polyfills
+      preferBuiltins: false // Force use of browser polyfills
     }),
 
     // 3. Convert CJS to ESM
     commonjs({
-      transformMixedEsModules: true,
+      transformMixedEsModules: true
     }),
 
     // 4. Inject Node.js Polyfills (Buffer, Stream, etc.)
-    polyfillNode(),
+    polyfillNode()
   ],
   // Empty external list means "Bundle everything"
   external: [],
-  onwarn,
+  onwarn
 };
 
 export default [configLibrary, configBundle];

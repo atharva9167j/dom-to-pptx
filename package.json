@@ -1,7 +1,7 @@
 {
-  "name": "dom-to-pptx",
-  "version": "1.1.5",
-  "description": "A client-side library that converts any HTML element into a fully editable PowerPoint slide. **dom-to-pptx** transforms DOM structures into pixel-accurate `.pptx` content, preserving gradients, shadows, rounded images, and responsive layouts. It translates CSS Flexbox/Grid, linear-gradients, box-shadows, and typography into native PowerPoint shapes, enabling precise, design-faithful slide generation directly from the browser.",
+  "name": "@247b/dom-to-pptx",
+  "version": "1.0.0",
+  "description": "A client-side library that converts any HTML element into a fully editable PowerPoint slide.",
   "main": "dist/dom-to-pptx.cjs",
   "module": "dist/dom-to-pptx.mjs",
   "browser": "dist/dom-to-pptx.bundle.js",
@@ -17,70 +17,36 @@
     "test:watch": "vitest",
     "build": "npx rollup -c",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prepare": "npm run build"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/atharva9167j/dom-to-pptx.git"
+    "url": "https://github.com/247b/dom-to-pptx.git"
   },
   "keywords": [
     "pptx",
     "html-to-pptx",
     "powerpoint",
-    "pptx-generator",
-    "slide-generator",
-    "presentation-generator",
-    "dom",
-    "dom-to-pptx",
-    "export",
-    "browser-export",
-    "client-side-pptx",
-    "html-to-powerpoint",
-    "convert-html",
-    "css-to-pptx",
-    "css-to-powerpoint",
-    "pptx-creator",
-    "presentation-tools",
-    "slides",
-    "slide-creation",
-    "web-to-pptx",
-    "web-to-powerpoint",
-    "frontend-pptx",
-    "html-rendering",
-    "layout-engine",
-    "gradient-support",
-    "flexbox",
-    "css-grid",
-    "typography"
+    "pptxgenjs",
+    "dom"
   ],
   "author": "Atharva Dharmendra Jagtap <atharvaj321@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/atharva9167j/dom-to-pptx/issues"
+    "url": "https://github.com/247b/dom-to-pptx/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^29.0.0",
-    "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^16.0.3",
-    "buffer": "^6.0.3",
+    "@rollup/plugin-commonjs": "^21.0.2",
+    "@rollup/plugin-json": "^6.2.2",
+    "@rollup/plugin-node-resolve": "^15.0.1",
+    "rollup": "^3.0.0",
+    "rollup-plugin-polyfill-node": "^0.10.0",
+    "vitest": "^0.34.0",
     "eslint": "^9.39.1",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.4",
-    "events": "^3.3.0",
-    "jsdom": "^28.0.0",
-    "prettier": "^3.7.3",
-    "process": "^0.11.10",
-    "rollup-plugin-polyfill-node": "^0.10.1",
-    "stream-browserify": "^3.0.0",
-    "util": "^0.12.5",
-    "vitest": "^4.0.18"
-  },
-  "dependencies": {
-    "fonteditor-core": "^2.6.3",
-    "html2canvas": "^1.4.1",
-    "jszip": "^3.10.1",
-    "opentype.js": "^1.3.4",
-    "pako": "^2.1.0",
-    "pptxgenjs": "^3.12.0"
+    "prettier": "^3.7.3"
   }
 }
