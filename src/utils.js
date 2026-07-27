@@ -153,6 +153,53 @@ export function extractTableData(node, scale) {
   return { rows, colWidths };
 }
 
+// Whether text in this element may re-wrap in the exported slide. `nowrap`/`pre` boxes must keep
+// their single browser-measured line, so they get wrap="none" and no <a:spAutoFit/> (LibreOffice's
+// autofit re-layout ignores wrap="none" and wraps inside the measured box).
+export function textWraps(style) {
+  return !(style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre');
+}
+
+// Text boxes are sized to the exact pixel measured in the browser, so any renderer whose font
+// metrics run slightly wider than Chromium's re-breaks the lines: Google Slides has no "don't
+// wrap" text property at all (imported text always wraps at the shape width), and a re-wrapped
+// paragraph gains a line and spills below its box. Give bare text boxes horizontal slack -
+// no-wrap lines keep their single line, wrapping paragraphs keep the browser's line count -
+// shifting x so the rendered text keeps its visual anchor. Callers must not apply this to
+// filled/bordered shapes: widening those stretches the visible shape (their no-wrap slack is
+// carved out of the text insets instead, see withNoWrapInsetSlack). Rotated and
+// vertical-writing boxes are left untouched: their pivot would move with the width.
+export function withTextWidthSlack(options, align) {
+  if (options.vert || options.rotate || !(options.w > 0)) {
+    return options;
+  }
+  const slack = Math.max(options.w * 0.06, 0.02);
+  const x = align === 'right' ? options.x - slack : align === 'center' ? options.x - slack / 2 : options.x;
+  return { ...options, x, w: options.w + slack };
+}
+
+// Counterpart of withNoWrapSlack for visible shapes (fill/border/shadow), which must keep their
+// measured size: the slack is carved out of the horizontal text insets instead. Renderers with no
+// no-wrap concept (Google Slides) wrap at shape width minus insets, and CSS padding is exported
+// as exactly-measured insets - leaving zero room for metric drift inside e.g. a badge pill.
+// margin is the PptxGenJS inset array in points, mapped as [lIns, rIns, bIns, tIns].
+export function withNoWrapInsetSlack(options, align) {
+  if (options.wrap !== false || options.vert || !(options.w > 0) || !Array.isArray(options.margin)) {
+    return options;
+  }
+  const slackPt = Math.max(options.w * 0.06, 0.02) * 72;
+  const margin = [...options.margin];
+  if (align === 'center') {
+    margin[0] = Math.max(0, margin[0] - slackPt / 2);
+    margin[1] = Math.max(0, margin[1] - slackPt / 2);
+  } else if (align === 'right') {
+    margin[0] = Math.max(0, margin[0] - slackPt);
+  } else {
+    margin[1] = Math.max(0, margin[1] - slackPt);
+  }
+  return { ...options, margin };
+}
+
 // Checks if any parent element has overflow: hidden which would clip this element
 export function isClippedByParent(node) {
   let parent = node.parentElement;

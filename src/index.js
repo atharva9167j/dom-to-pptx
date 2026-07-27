@@ -25,6 +25,9 @@ import {
   getBorderInfo,
   generateCompositeBorderSVG,
   isClippedByParent,
+  textWraps,
+  withTextWidthSlack,
+  withNoWrapInsetSlack,
   generateCustomShapeSVG,
   getUsedFontFamilies,
   getAutoDetectedFonts,
@@ -1179,15 +1182,26 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
           // Honor CSS white-space: a `nowrap`/`pre` element must not re-wrap in
           // the exported slide (otherwise a single line measured in the browser
           // can wrap in PowerPoint/LibreOffice due to font-metric differences).
-          options: {
+          // Autofit: wrapping boxes get 'shrink' (<a:normAutofit/>) - a renderer
+          // whose wider glyph metrics re-wrap the text into an extra line shrinks
+          // it to fit instead of spilling over content below the box (spAutoFit
+          // grows the box, which Google Slides turns into visible overflow, and
+          // LibreOffice's spAutoFit re-layout even ignores wrap="none"). No-wrap
+          // boxes get no autofit at all: their single line never needs fitting.
+          // Known limitation: a bare <a:normAutofit/> carries no fontScale, and
+          // desktop PowerPoint only computes one when the shape is next edited
+          // (https://github.com/gitbrent/PptxGenJS/issues/544) - so there the
+          // shrink is a backstop; withTextWidthSlack is the primary defense
+          // because it prevents the re-wrap from adding a line at all.
+          options: withTextWidthSlack({
             x,
             y,
             w: unrotatedW,
             h: unrotatedH,
             margin: 0,
-            autoFit: true,
-            wrap: !(style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre'),
-          },
+            fit: textWraps(style) ? 'shrink' : 'none',
+            wrap: textWraps(style),
+          }),
         },
       ],
       stopRecursion: false,
@@ -1326,12 +1340,12 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
     const ulPaddingBottom = parseFloat(style.paddingBottom) || 0;
     const ulPaddingLeft = parseFloat(style.paddingLeft) || 0;
 
-    // Convert to inches for PPTX margin array: [top, right, bottom, left]
+    // PptxGenJS consumes the margin array as [lIns, rIns, bIns, tIns], in points
     const listMargin = [
-      ulPaddingTop * PX_TO_INCH * config.scale * 72,
+      ulPaddingLeft * PX_TO_INCH * config.scale * 72,
       ulPaddingRight * PX_TO_INCH * config.scale * 72,
       ulPaddingBottom * PX_TO_INCH * config.scale * 72,
-      ulPaddingLeft * PX_TO_INCH * config.scale * 72,
+      ulPaddingTop * PX_TO_INCH * config.scale * 72,
     ];
 
     liChildren.forEach((child, index) => {
@@ -1518,20 +1532,23 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         zIndex: parentSortKey.concat([0, -1]),
         domOrder,
         textParts: listItems,
-        options: {
-          x,
-          y,
-          w,
-          h,
-          align: 'left',
-          valign: 'top',
-          // Apply CSS padding as PPTX text box inset margin [top, right, bottom, left] in points
-          margin: listMargin,
-          autoFit: true,
-          wrap: !(style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre'),
-          vert: writingModeVert,
-          ...(writingModeVert && { textDirection: mapVertToTextDirection(writingModeVert) }),
-        },
+        options: withTextWidthSlack(
+          {
+            x,
+            y,
+            w,
+            h,
+            align: 'left',
+            valign: 'top',
+            // CSS padding applied as PPTX text box insets in points
+            margin: listMargin,
+            fit: textWraps(style) ? 'shrink' : 'none',
+            wrap: textWraps(style),
+            vert: writingModeVert,
+            ...(writingModeVert && { textDirection: mapVertToTextDirection(writingModeVert) }),
+          },
+          'left',
+        ),
       });
 
       return { items, stopRecursion: true };
@@ -1770,11 +1787,12 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       }
 
       const padding = getPadding(style, config.scale);
+      // PptxGenJS consumes the margin array as [lIns, rIns, bIns, tIns]
       const margin = [
-        padding[3] * 72, // top
+        padding[3] * 72, // left
         padding[1] * 72, // right
         padding[2] * 72, // bottom
-        padding[0] * 72, // left
+        padding[0] * 72, // top
       ];
 
       textPayload = { text: textParts, align, valign, margin };
@@ -1858,20 +1876,23 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         zIndex: parentSortKey.concat([0, -1]),
         domOrder,
         textParts: textPayload.text,
-        options: {
-          x,
-          y,
-          w,
-          h,
-          align: textPayload.align,
-          valign: textPayload.valign,
-          rotate: rotation,
-          margin: textPayload.margin,
-          wrap: !(style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre'),
-          autoFit: true,
-          vert: writingModeVert,
-          ...(writingModeVert && { textDirection: mapVertToTextDirection(writingModeVert) }),
-        },
+        options: withTextWidthSlack(
+          {
+            x,
+            y,
+            w,
+            h,
+            align: textPayload.align,
+            valign: textPayload.valign,
+            rotate: rotation,
+            margin: textPayload.margin,
+            wrap: textWraps(style),
+            fit: textWraps(style) ? 'shrink' : 'none',
+            vert: writingModeVert,
+            ...(writingModeVert && { textDirection: mapVertToTextDirection(writingModeVert) }),
+          },
+          textPayload.align,
+        ),
       });
     }
     if (hasCompositeBorder) {
@@ -1954,17 +1975,35 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       }
 
       if (textPayload) {
+        // A box with a visible fill, border, or shadow must keep its measured size - widening it
+        // would stretch the visible shape - so no-wrap text is split out of it: the shape is
+        // emitted at its exact measured size and the text goes in a separate invisible box that
+        // can safely take width slack. Keeping the text inside the shape is not enough for
+        // renderers with no no-wrap concept (Google Slides): they wrap at width minus insets,
+        // and shrink a round-rect's text area by its corner radius on top of that.
+        const isVisibleShape = Boolean(useSolidFill || hasUniformBorder || hasShadow);
+        const splitNoWrapText = isVisibleShape && !textWraps(style) && !rotation && !writingModeVert;
+        if (splitNoWrapText) {
+          items.push({
+            type: 'shape',
+            zIndex: parentSortKey.concat([-Infinity]),
+            domOrder,
+            shapeType,
+            options: shapeOpts,
+          });
+        }
         const textOptions = {
-          shape: shapeType,
-          ...shapeOpts,
+          ...(splitNoWrapText ? {} : { shape: shapeType, ...shapeOpts }),
+          x,
+          y,
           w,
           h,
           rotate: rotation,
           align: textPayload.align,
           valign: textPayload.valign,
           margin: textPayload.margin,
-          wrap: !(style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre'),
-          autoFit: true,
+          wrap: textWraps(style),
+          fit: textWraps(style) ? 'shrink' : 'none',
           vert: writingModeVert,
           ...(writingModeVert && { textDirection: mapVertToTextDirection(writingModeVert) }),
         };
@@ -1973,7 +2012,11 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
           zIndex: parentSortKey.concat([0, -1]),
           domOrder,
           textParts: textPayload.text,
-          options: textOptions,
+          options: splitNoWrapText
+            ? withTextWidthSlack(textOptions, textPayload.align)
+            : isVisibleShape
+              ? withNoWrapInsetSlack(textOptions, textPayload.align)
+              : withTextWidthSlack(textOptions, textPayload.align),
         });
       } else if (!hasPartialBorderRadius || customShapeName) {
         items.push({

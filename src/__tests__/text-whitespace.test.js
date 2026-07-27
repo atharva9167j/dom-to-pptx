@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitPreformattedText } from '../utils.js';
+import { splitPreformattedText, textWraps, withTextWidthSlack, withNoWrapInsetSlack } from '../utils.js';
 
 const texts = (segs) => segs.map((s) => s.text);
 const breaks = (segs) => segs.map((s) => s.breakLine);
@@ -75,5 +75,79 @@ describe('splitPreformattedText', () => {
   it('returns nothing for empty / terminator-only content', () => {
     expect(splitPreformattedText('\n', 'pre', { isLastChild: true })).toEqual([]);
     expect(splitPreformattedText('', 'pre', { isLastChild: true })).toEqual([]);
+  });
+});
+
+describe('textWraps', () => {
+  it('is false for nowrap and pre (single measured line, wrap="none", no spAutoFit)', () => {
+    expect(textWraps({ whiteSpace: 'nowrap' })).toBe(false);
+    expect(textWraps({ whiteSpace: 'pre' })).toBe(false);
+  });
+
+  it('is true for wrapping white-space modes', () => {
+    expect(textWraps({ whiteSpace: 'normal' })).toBe(true);
+    expect(textWraps({ whiteSpace: 'pre-wrap' })).toBe(true);
+    expect(textWraps({ whiteSpace: 'pre-line' })).toBe(true);
+  });
+});
+
+describe('withTextWidthSlack', () => {
+  const box = (over = {}) => ({ x: 1, y: 1, w: 1, h: 0.2, wrap: false, ...over });
+
+  it('leaves vertical, rotated, and zero-width boxes untouched', () => {
+    for (const opts of [box({ vert: 'eaVert' }), box({ rotate: 90 }), box({ w: 0 })]) {
+      expect(withTextWidthSlack(opts)).toBe(opts);
+    }
+  });
+
+  it('widens a left-anchored box without moving x, for no-wrap and wrapping text alike', () => {
+    for (const opts of [box(), box({ wrap: true })]) {
+      const out = withTextWidthSlack(opts);
+      expect(out.w).toBeCloseTo(1.06);
+      expect(out.x).toBe(1);
+    }
+  });
+
+  it('applies a 0.02in floor for tiny boxes', () => {
+    const out = withTextWidthSlack(box({ w: 0.1 }));
+    expect(out.w).toBeCloseTo(0.12);
+  });
+
+  it('shifts x to keep centered and right-aligned text anchored', () => {
+    expect(withTextWidthSlack(box(), 'center').x).toBeCloseTo(1 - 0.03);
+    expect(withTextWidthSlack(box(), 'right').x).toBeCloseTo(1 - 0.06);
+  });
+});
+
+describe('withNoWrapInsetSlack', () => {
+  // margin follows the PptxGenJS inset order [lIns, rIns, bIns, tIns], in points
+  const box = (over = {}) => ({ x: 1, y: 1, w: 1, h: 0.2, wrap: false, margin: [6, 6, 6, 6], ...over });
+
+  it('leaves wrapping, vertical, zero-width, and non-array-margin boxes untouched', () => {
+    for (const opts of [box({ wrap: true }), box({ vert: 'eaVert' }), box({ w: 0 }), box({ margin: 0 })]) {
+      expect(withNoWrapInsetSlack(opts)).toBe(opts);
+    }
+  });
+
+  // margin index order follows PptxGenJS insets: [lIns, rIns, bIns, tIns]
+  it('keeps the box geometry and takes slack from the right inset for left-aligned text', () => {
+    const out = withNoWrapInsetSlack(box(), 'left');
+    expect(out.w).toBe(1);
+    expect(out.x).toBe(1);
+    expect(out.margin).toEqual([6, 6 - 0.06 * 72, 6, 6]);
+  });
+
+  it('splits the slack across both horizontal insets for centered text', () => {
+    const out = withNoWrapInsetSlack(box(), 'center');
+    expect(out.margin[0]).toBeCloseTo(6 - (0.06 * 72) / 2);
+    expect(out.margin[1]).toBeCloseTo(6 - (0.06 * 72) / 2);
+    expect(out.margin[2]).toBe(6);
+    expect(out.margin[3]).toBe(6);
+  });
+
+  it('takes slack from the left inset for right-aligned text and floors insets at 0', () => {
+    const out = withNoWrapInsetSlack(box({ margin: [1, 6, 6, 6] }), 'right');
+    expect(out.margin[0]).toBe(0);
+    expect(out.margin[1]).toBe(6);
   });
 });
