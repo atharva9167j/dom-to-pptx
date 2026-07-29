@@ -1190,9 +1190,10 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
           // boxes get no autofit at all: their single line never needs fitting.
           // Known limitation: a bare <a:normAutofit/> carries no fontScale, and
           // desktop PowerPoint only computes one when the shape is next edited
-          // (https://github.com/gitbrent/PptxGenJS/issues/544) - so there the
-          // shrink is a backstop; withTextWidthSlack is the primary defense
-          // because it prevents the re-wrap from adding a line at all.
+          // (https://github.com/gitbrent/PptxGenJS/issues/544). Wrapping boxes
+          // still retain their measured width so they cannot cross an authored
+          // boundary; withTextWidthSlack remains the primary defense for no-wrap
+          // labels because it prevents a renderer from adding a line at all.
           options: withTextWidthSlack({
             x,
             y,

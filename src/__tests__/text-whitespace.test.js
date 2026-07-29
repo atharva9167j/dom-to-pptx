@@ -100,12 +100,15 @@ describe('withTextWidthSlack', () => {
     }
   });
 
-  it('widens a left-anchored box without moving x, for no-wrap and wrapping text alike', () => {
-    for (const opts of [box(), box({ wrap: true })]) {
-      const out = withTextWidthSlack(opts);
-      expect(out.w).toBeCloseTo(1.06);
-      expect(out.x).toBe(1);
-    }
+  it('keeps wrapping text inside its browser-measured box', () => {
+    const opts = box({ wrap: true });
+    expect(withTextWidthSlack(opts)).toBe(opts);
+  });
+
+  it('widens a left-anchored no-wrap box without moving x', () => {
+    const out = withTextWidthSlack(box());
+    expect(out.w).toBeCloseTo(1.06);
+    expect(out.x).toBe(1);
   });
 
   it('applies a 0.02in floor for tiny boxes', () => {

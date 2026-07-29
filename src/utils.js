@@ -161,16 +161,15 @@ export function textWraps(style) {
 }
 
 // Text boxes are sized to the exact pixel measured in the browser, so any renderer whose font
-// metrics run slightly wider than Chromium's re-breaks the lines: Google Slides has no "don't
-// wrap" text property at all (imported text always wraps at the shape width), and a re-wrapped
-// paragraph gains a line and spills below its box. Give bare text boxes horizontal slack -
-// no-wrap lines keep their single line, wrapping paragraphs keep the browser's line count -
-// shifting x so the rendered text keeps its visual anchor. Callers must not apply this to
-// filled/bordered shapes: widening those stretches the visible shape (their no-wrap slack is
-// carved out of the text insets instead, see withNoWrapInsetSlack). Rotated and
+// metrics run slightly wider than Chromium's can re-break a no-wrap label. Google Slides has no
+// "don't wrap" text property at all, so give bare no-wrap text boxes horizontal slack and shift x
+// to keep the rendered text visually anchored. Wrapping text must stay inside its browser-measured
+// rectangle: widening it can consume an authored inset or cross its containing boundary. Callers
+// must not apply this to filled/bordered shapes: widening those stretches the visible shape (their
+// no-wrap slack is carved out of the text insets instead, see withNoWrapInsetSlack). Rotated and
 // vertical-writing boxes are left untouched: their pivot would move with the width.
 export function withTextWidthSlack(options, align) {
-  if (options.vert || options.rotate || !(options.w > 0)) {
+  if (options.wrap !== false || options.vert || options.rotate || !(options.w > 0)) {
     return options;
   }
   const slack = Math.max(options.w * 0.06, 0.02);
