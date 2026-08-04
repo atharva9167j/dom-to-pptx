@@ -1765,7 +1765,10 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
 
       if (isVertical) {
         textParts.forEach((p) => {
-          if (p.options) delete p.options.lineSpacing;
+          if (p.options) {
+            delete p.options.lineSpacing;
+            delete p.options.lineSpacingMultiple;
+          }
         });
       }
 

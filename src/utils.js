@@ -551,6 +551,7 @@ export function getTextStyle(style, scale, includeMargins = true, inheritedOpaci
   }
 
   let lineSpacing = null;
+  let lineSpacingMultiple = null;
   const fontSizePx = parseFloat(style.fontSize);
   const lhStr = style.lineHeight;
 
@@ -564,10 +565,16 @@ export function getTextStyle(style, scale, includeMargins = true, inheritedOpaci
       lhPx = lhPx * fontSizePx;
     }
 
-    if (!isNaN(lhPx) && lhPx > 0) {
-      // Convert Pixel Height to Point Height (1px = 0.75pt)
-      // And apply the global layout scale.
-      lineSpacing = lhPx * 0.75 * scale;
+    if (!isNaN(lhPx) && lhPx > 0 && !isNaN(fontSizePx) && fontSizePx > 0) {
+      const preventsSoftWrap = style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre';
+      if (preventsSoftWrap) {
+        // Keep the existing exact-point serialization for single-line text.
+        lineSpacing = lhPx * 0.75 * scale;
+      } else {
+        // PPTX viewers agree on relative spacing against an approximately 1.2em
+        // single-spacing basis. Floor at DrawingML's 1/1000 percent precision.
+        lineSpacingMultiple = Math.floor((lhPx / fontSizePx / 1.2) * 100000) / 100000;
+      }
     }
   }
 
@@ -596,6 +603,7 @@ export function getTextStyle(style, scale, includeMargins = true, inheritedOpaci
     underline: style.textDecoration.includes('underline'),
     // Only add if we have a valid value
     ...(lineSpacing && { lineSpacing }),
+    ...(lineSpacingMultiple && { lineSpacingMultiple }),
     ...(paraSpaceBefore > 0 && { paraSpaceBefore }),
     ...(paraSpaceAfter > 0 && { paraSpaceAfter }),
     // Map background color to highlight if present

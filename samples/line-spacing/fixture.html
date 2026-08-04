@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Relative line spacing sample</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+      }
+
+      .slide {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        padding: 160px;
+        background: #f5f1e8;
+        color: #17324d;
+        font-family: Arial, sans-serif;
+      }
+
+      .paragraph {
+        width: 820px;
+        height: 250px;
+        margin: 0;
+        padding: 0;
+        font-size: 16px;
+        line-height: 25px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="slide">
+      <p class="paragraph">
+        This wrapping paragraph preserves one editable soft-wrapped text box. Its measured 25 pixel line height is
+        serialized relative to the 16 pixel font size so PowerPoint, Keynote, LibreOffice, and Google Slides can apply
+        the same spacing model while keeping the original box geometry.
+      </p>
+    </main>
+  </body>
+</html>
