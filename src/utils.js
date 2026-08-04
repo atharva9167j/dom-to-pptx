@@ -172,7 +172,8 @@ export function withTextWidthSlack(options, align) {
   if (options.wrap !== false || options.vert || options.rotate || !(options.w > 0)) {
     return options;
   }
-  const slack = Math.max(options.w * 0.06, 0.02);
+  const horizontalInsets = Array.isArray(options.margin) ? (options.margin[0] + options.margin[1]) / 72 : 0;
+  const slack = Math.max(options.w * 0.06, 0.02, horizontalInsets);
   const x = align === 'right' ? options.x - slack : align === 'center' ? options.x - slack / 2 : options.x;
   return { ...options, x, w: options.w + slack };
 }
@@ -1395,7 +1396,9 @@ export async function getAutoDetectedFonts(usedFamilies) {
  * and so the classification is unit-testable.
  */
 export function classifyFontVariant(weight, style) {
-  const wRaw = String(weight || '400').toLowerCase().trim();
+  const wRaw = String(weight || '400')
+    .toLowerCase()
+    .trim();
   let w = parseInt(wRaw, 10);
   if (isNaN(w)) {
     if (wRaw === 'bold' || wRaw === 'bolder') w = 700;

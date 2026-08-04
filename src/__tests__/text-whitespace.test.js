@@ -116,6 +116,13 @@ describe('withTextWidthSlack', () => {
     expect(out.w).toBeCloseTo(0.12);
   });
 
+  it('covers the horizontal text insets when they exceed the width floor', () => {
+    const out = withTextWidthSlack(box({ margin: [6.75, 6.75, 3, 3] }), 'center');
+    expect(out.w).toBeCloseTo(1.1875);
+    expect(out.x).toBeCloseTo(1 - 0.09375);
+    expect(out.margin).toEqual([6.75, 6.75, 3, 3]);
+  });
+
   it('shifts x to keep centered and right-aligned text anchored', () => {
     expect(withTextWidthSlack(box(), 'center').x).toBeCloseTo(1 - 0.03);
     expect(withTextWidthSlack(box(), 'right').x).toBeCloseTo(1 - 0.06);

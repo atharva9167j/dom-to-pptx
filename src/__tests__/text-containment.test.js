@@ -44,6 +44,16 @@ function shapeGeometry(shape) {
   };
 }
 
+function bodyInsets(shape) {
+  const bodyPr = shape.getElementsByTagName('a:bodyPr')[0];
+  return {
+    left: Number(bodyPr.getAttribute('lIns')),
+    right: Number(bodyPr.getAttribute('rIns')),
+    bottom: Number(bodyPr.getAttribute('bIns')),
+    top: Number(bodyPr.getAttribute('tIns')),
+  };
+}
+
 describe('bare text containment and no-wrap compatibility', () => {
   beforeAll(() => {
     let fillStyle = '';
@@ -120,6 +130,91 @@ describe('bare text containment and no-wrap compatibility', () => {
       expect(badgeShape.getElementsByTagName('a:spAutoFit')).toHaveLength(0);
       expect(badgeShape.getElementsByTagName('a:normAutofit')).toHaveLength(0);
       expect(badgeShape.getElementsByTagName('a:bodyPr')[0].getAttribute('wrap')).toBe('none');
+    } finally {
+      slide.remove();
+    }
+  });
+
+  it('widens no-wrap text by its insets while preserving visible geometry and wrapping containment', async () => {
+    const slide = document.createElement('div');
+    slide.setAttribute('style', 'position:relative;width:1920px;height:1080px;background:#fff');
+
+    const label = document.createElement('div');
+    label.textContent = 'White';
+    label.setAttribute(
+      'style',
+      'position:absolute;color:#111;font-size:9px;line-height:20px;white-space:nowrap;padding-right:4px'
+    );
+
+    const pill = document.createElement('div');
+    pill.textContent = 'COLLECTION PITCH';
+    Object.assign(pill.style, {
+      position: 'absolute',
+      color: '#fff',
+      backgroundColor: '#123456',
+      border: '1px solid #123456',
+      borderRadius: '16px',
+      fontSize: '10px',
+      lineHeight: '16px',
+      textAlign: 'center',
+      whiteSpace: 'nowrap',
+      padding: '8px 18px',
+    });
+
+    const copy = document.createElement('div');
+    copy.textContent = 'Wrapping control remains inside its exact authored width.';
+    copy.setAttribute(
+      'style',
+      'position:absolute;color:#111;font-size:24px;line-height:32px;white-space:normal;padding:0'
+    );
+
+    slide.append(label, pill, copy);
+    document.body.appendChild(slide);
+
+    slide.getBoundingClientRect = () => rect({ left: 0, top: 0, width: 1920, height: 1080 });
+    label.getBoundingClientRect = () =>
+      rect({ left: 1800, top: 530, width: 162446 / EMU_PER_PX, height: 95250 / EMU_PER_PX });
+    pill.getBoundingClientRect = () =>
+      rect({ left: 48, top: 48, width: 752252 / EMU_PER_PX, height: 150019 / EMU_PER_PX });
+    copy.getBoundingClientRect = () => rect({ left: 1052, top: 300, width: 820, height: 320 });
+
+    try {
+      const blob = await exportToPptx(slide, {
+        skipDownload: true,
+        autoEmbedFonts: false,
+      });
+      const zip = await JSZip.loadAsync(blob);
+      const xml = await zip.file('ppt/slides/slide1.xml').async('string');
+
+      const labelShape = shapeContainingText(xml, 'White');
+      const labelGeometry = shapeGeometry(labelShape);
+      expect(labelGeometry.width).toBe(181496);
+      expect(labelGeometry.width - bodyInsets(labelShape).right).toBe(162446);
+      expect(labelGeometry.x + labelGeometry.width).toBeLessThanOrEqual(9144000);
+      expect(bodyInsets(labelShape)).toEqual({ left: 0, right: 19050, bottom: 0, top: 0 });
+
+      const pillTextShape = shapeContainingText(xml, 'COLLECTION PITCH');
+      const pillTextGeometry = shapeGeometry(pillTextShape);
+      expect(pillTextGeometry.x).toBe(142875);
+      expect(pillTextGeometry.width).toBe(923702);
+      expect(pillTextGeometry.width - bodyInsets(pillTextShape).left - bodyInsets(pillTextShape).right).toBe(752252);
+      expect(pillTextGeometry.x + pillTextGeometry.width).toBeLessThanOrEqual(9144000);
+      expect(bodyInsets(pillTextShape)).toEqual({ left: 85725, right: 85725, bottom: 38100, top: 38100 });
+
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      const visiblePill = Array.from(doc.getElementsByTagName('p:sp')).find((shape) => {
+        const geometry = shapeGeometry(shape);
+        return !shape.getElementsByTagName('a:t').length && geometry.x === 228600 && geometry.width === 752252;
+      });
+      expect(visiblePill).toBeDefined();
+      expect(shapeGeometry(visiblePill)).toEqual({ x: 228600, y: 228600, width: 752252, height: 150019 });
+
+      const copyShape = shapeContainingText(xml, 'Wrapping control');
+      const copyGeometry = shapeGeometry(copyShape);
+      expect(copyGeometry.width).toBe(Math.round(820 * EMU_PER_PX));
+      expect(copyGeometry.x + copyGeometry.width).toBeLessThanOrEqual(Math.round((1052 + 820) * EMU_PER_PX));
+      expect(bodyInsets(copyShape)).toEqual({ left: 0, right: 0, bottom: 0, top: 0 });
+      expect(copyShape.getElementsByTagName('a:bodyPr')[0].getAttribute('wrap')).toBe('square');
     } finally {
       slide.remove();
     }
