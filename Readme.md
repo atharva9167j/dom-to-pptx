@@ -225,7 +225,7 @@ await exportToPptx(
 );
 ```
 
-See [`docs/template-support.md`](docs/template-support.md) for how layouts are resolved, default behavior, error handling, and known limitations (e.g. font embedding is not currently supported together with `template`).
+Embedded fonts (explicit `fonts` or automatic `@font-face` detection) work together with `template` — no fallback to a system font. See [`docs/template-support.md`](docs/template-support.md) for how layouts are resolved, default behavior, error handling, and known limitations.
 
 ### 6. Animated Slides & Transitions (New in v2.0.0)
 
@@ -440,26 +440,26 @@ We recommend building your slide container at **1920x1080px**. The library will 
 
 Returns: `Promise<Blob>` - Resolves with the generated PPTX file data (Blob).
 
-| Parameter           | Type                                                        | Description                                                                                                        |
-| :------------------ | :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
+| Parameter           | Type                                                                                 | Description                                                                                                                                                                                                                                    |
+| :------------------ | :----------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `elementOrSelector` | `string` \| `HTMLElement` \| `Array<string \| HTMLElement \| {element, baseLayout}>` | The DOM node(s) or ID selector(s) to convert. Can be a single element/selector or an array for multi-slide export. An array entry may be a `{element, baseLayout}` descriptor to pick a template layout for that slide (see `template` below). |
-| `options`           | `object`                                                    | Configuration object.                                                                                              |
+| `options`           | `object`                                                                             | Configuration object.                                                                                                                                                                                                                          |
 
 **Options Object:**
 
-| Key              | Type      | Default         | Description                                                                                                   |
-| :--------------- | :-------- | :-------------- | :------------------------------------------------------------------------------------------------------------ |
-| `fileName`       | `string`  | `"export.pptx"` | The name of the downloaded file.                                                                              |
-| `autoEmbedFonts` | `boolean` | `true`          | Automatically detect and embed used fonts.                                                                    |
-| `fonts`          | `Array`   | `[]`            | Manual array of font objects: `{ name, url }`.                                                                |
-| `skipDownload`   | `boolean` | `false`         | If `true`, the file is not downloaded automatically. Use the returned `Blob` for custom handling (upload).    |
-| `svgAsVector`    | `boolean` | `false`         | If `true`, keeps SVG elements as vectors (not rasterized). Enables "Convert to Shape" in PowerPoint.          |
-| `layout`         | `string`  | `"LAYOUT_16x9"` | Slide layout name (e.g., `LAYOUT_4x3`, `LAYOUT_16x10`, `LAYOUT_WIDE`).                                        |
-| `width`          | `number`  | `10`            | Custom slide width in inches (requires `height` to be set).                                                   |
-| `height`         | `number`  | `5.625`         | Custom slide height in inches (requires `width` to be set).                                                   |
-| `listConfig`     | `object`  | `undefined`     | Global overrides for list styles. Structure: `{ color: string, spacing: { before: number, after: number } }`. |
-| `template`       | `string` \| `ArrayBuffer` \| `Uint8Array` \| `Blob` | `undefined` | Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [Template Support](docs/template-support.md). |
-| `defaultBaseLayout` | `string` | template's first layout | Layout name (from `template`) used for any slide that doesn't set its own `baseLayout`. |
+| Key                 | Type                                                | Default                 | Description                                                                                                                                        |
+| :------------------ | :-------------------------------------------------- | :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fileName`          | `string`                                            | `"export.pptx"`         | The name of the downloaded file.                                                                                                                   |
+| `autoEmbedFonts`    | `boolean`                                           | `true`                  | Automatically detect and embed used fonts.                                                                                                         |
+| `fonts`             | `Array`                                             | `[]`                    | Manual array of font objects: `{ name, url }`.                                                                                                     |
+| `skipDownload`      | `boolean`                                           | `false`                 | If `true`, the file is not downloaded automatically. Use the returned `Blob` for custom handling (upload).                                         |
+| `svgAsVector`       | `boolean`                                           | `false`                 | If `true`, keeps SVG elements as vectors (not rasterized). Enables "Convert to Shape" in PowerPoint.                                               |
+| `layout`            | `string`                                            | `"LAYOUT_16x9"`         | Slide layout name (e.g., `LAYOUT_4x3`, `LAYOUT_16x10`, `LAYOUT_WIDE`).                                                                             |
+| `width`             | `number`                                            | `10`                    | Custom slide width in inches (requires `height` to be set).                                                                                        |
+| `height`            | `number`                                            | `5.625`                 | Custom slide height in inches (requires `width` to be set).                                                                                        |
+| `listConfig`        | `object`                                            | `undefined`             | Global overrides for list styles. Structure: `{ color: string, spacing: { before: number, after: number } }`.                                      |
+| `template`          | `string` \| `ArrayBuffer` \| `Uint8Array` \| `Blob` | `undefined`             | Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [Template Support](docs/template-support.md). |
+| `defaultBaseLayout` | `string`                                            | template's first layout | Layout name (from `template`) used for any slide that doesn't set its own `baseLayout`.                                                            |
 
 > Note: animations and transitions are controlled entirely through CSS classes on your elements (see [Animated Slides & Transitions](#6-animated-slides--transitions-new-in-v120)), not through the `options` object.
 

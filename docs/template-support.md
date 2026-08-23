@@ -6,7 +6,7 @@
 
 The goal of this feature is narrow: let a caller pick one of those existing layouts per slide, so the exported slide's background comes from PowerPoint's real master/layout inheritance — not a screenshot, not a rasterized image — while the slide's own content is still rendered by dom-to-pptx's normal DOM-to-shapes pipeline exactly as before.
 
-This is **not** a general PowerPoint template engine. It does not do placeholder filling, layout auto-selection, template management, or any rendering/preview of the master. Deciding *which* layout a given piece of content should use is left entirely to the calling application.
+This is **not** a general PowerPoint template engine. It does not do placeholder filling, layout auto-selection, template management, or any rendering/preview of the master. Deciding _which_ layout a given piece of content should use is left entirely to the calling application.
 
 ## Architecture
 
@@ -28,8 +28,20 @@ template given?
 - Copies each newly generated `ppt/slides/slideN.xml`, its `ppt/notesSlides/notesSlideN.xml` (dom-to-pptx/PptxGenJS always creates one per slide), and any images it references, into the template package under fresh, non-colliding numbers.
 - Rewrites exactly **one** relationship per copied slide: its `slideLayout` relationship, from PptxGenJS's own generated blank layout to the real layout resolved from the template (by name — see below). Everything else in the slide (shapes, text, colors, images) is untouched, because dom-to-pptx always writes explicit RGB values rather than theme-scheme colors, so swapping the parent layout never changes how existing shapes render.
 - Appends the new slides to `ppt/presentation.xml`'s `<p:sldIdLst>` and to `ppt/_rels/presentation.xml.rels`, and adds the corresponding `[Content_Types].xml` `<Override>` entries.
+- If fonts were requested, merges them into the template's own `<p:embeddedFontLst>` (see **Font embedding** below).
 
 No existing part of the template is rewritten wholesale; only the specific nodes above are added or edited via DOM manipulation (`DOMParser`/`XMLSerializer`, the same approach `pptx-normalizer.js` already uses elsewhere in this codebase).
+
+## Font embedding
+
+`template` and embedded fonts (`options.fonts`, and dom-to-pptx's normal automatic `@font-face` detection) work together — the exported deck never has to fall back to a system font just because a template was used.
+
+The existing font pipeline is reused unchanged: dom-to-pptx still detects/fetches font files and converts them to PowerPoint's `.fntdata` format via `PPTXEmbedFonts.addFont()` exactly as it always has. The only thing that's template-aware is the _last_ step — instead of writing that converted font data into the throwaway generated package (which gets discarded once a template is in play), it's handed to `mergeTemplate()`, which folds it into the **template's own** `presentation.xml`:
+
+- `<p:embeddedFontLst>` is found if the template already has one (real corporate templates that were themselves saved with embedded fonts do), or created at the schema-correct position in `<p:presentation>`'s child list (per ECMA-376 §19.2.1.26 — right after `sldSz`/`notesSz`, before `custShowLst`/`defaultTextStyle`/etc. if present) — never just appended at the end regardless of what else is there.
+- Deduplicated by **(typeface, variant)**: a font the template already has embedded for a given style slot (regular/bold/italic/boldItalic) is never re-embedded, overwritten, or duplicated. A _new_ variant for an _already-declared_ typeface is added into that same `<p:embeddedFont>` block (schema-ordered: `font, regular, bold, italic, boldItalic`) rather than creating a second, conflicting block for that family.
+- New font files are written as `ppt/fonts/fontN.fntdata`, numbered past whatever `fontN.fntdata` files the template already contains (matching the naming convention real PowerPoint itself uses when saving embedded fonts).
+- New relationship IDs are allocated from the same collision-free counter used for the new slides — i.e. one past the template's actual highest existing `rId`, whatever that already is. Relationship IDs are never assumed to start from a fixed number.
 
 ## Public API
 
@@ -46,6 +58,10 @@ await exportToPptx(
     // Optional: layout used for any slide that doesn't specify baseLayout.
     // Falls back to the template's first declared layout if omitted.
     defaultBaseLayout: 'Content Light',
+    // Embedded fonts work together with `template` — either explicitly:
+    fonts: [{ name: 'Corporate Font', url: 'https://.../corporate-font.woff2' }],
+    // ...or via dom-to-pptx's normal automatic @font-face detection
+    // (autoEmbedFonts, on by default) — no extra configuration needed.
   }
 );
 ```
@@ -66,7 +82,7 @@ const layouts = await getTemplateLayouts('./corporate-template.pptx');
 
 Three options were considered for how a caller identifies "which layout":
 
-- **`rId`** (e.g. `rId23`) — rejected. A relationship ID is local to one specific `.rels` file and has no meaning outside it; it isn't even stable across two different exports of the *same* template if PowerPoint re-saves it.
+- **`rId`** (e.g. `rId23`) — rejected. A relationship ID is local to one specific `.rels` file and has no meaning outside it; it isn't even stable across two different exports of the _same_ template if PowerPoint re-saves it.
 - **OOXML part path** (e.g. `ppt/slideLayouts/slideLayout3.xml`) — technically stable and unambiguous, but meaningless to anyone not looking at the raw zip contents, and layout numbering can change if the template file is re-saved by PowerPoint.
 - **Layout name** (e.g. `"Content Light"`, from `<p:cSld name="...">`, the same name PowerPoint shows in its own layout picker UI) — chosen as the **public** API, because it's what a human (or a calling application's own config) actually references.
 
@@ -74,7 +90,7 @@ Internally, `readTemplate()` resolves each layout's name to its **part path** on
 
 ## Slide size
 
-When `template` is set and the caller didn't pass an explicit `width`/`height` (or `layout`), the export automatically adopts the template's own declared `<p:sldSz>` for all coordinate math. This isn't cosmetic: the template's `presentation.xml` — including its real `sldSz` — is preserved as-is by the merge, so if dom-to-pptx computed shape positions against a *different* canvas size, shapes would land at the wrong scale relative to the real background. An explicit `options.width`/`options.height` still takes priority if you deliberately want a mismatch.
+When `template` is set and the caller didn't pass an explicit `width`/`height` (or `layout`), the export automatically adopts the template's own declared `<p:sldSz>` for all coordinate math. This isn't cosmetic: the template's `presentation.xml` — including its real `sldSz` — is preserved as-is by the merge, so if dom-to-pptx computed shape positions against a _different_ canvas size, shapes would land at the wrong scale relative to the real background. An explicit `options.width`/`options.height` still takes priority if you deliberately want a mismatch.
 
 ## Default layout (no `baseLayout` given)
 
@@ -97,11 +113,11 @@ Error: dom-to-pptx: PowerPoint layout "does-not-exist" was not found in template
 dom-to-pptx-exporter slides.html --template ./corporate-template.pptx --base-layout "Section Dark"
 ```
 
-The CLI selects slides purely by CSS selector, so it has no way to assign a *different* layout to each individual slide — `--base-layout` (mapped to `defaultBaseLayout`) applies uniformly to every slide the CLI exports. Per-slide layout selection (`{ element, baseLayout }`) is a programmatic-API-only feature.
+The CLI selects slides purely by CSS selector, so it has no way to assign a _different_ layout to each individual slide — `--base-layout` (mapped to `defaultBaseLayout`) applies uniformly to every slide the CLI exports. Per-slide layout selection (`{ element, baseLayout }`) is a programmatic-API-only feature.
 
 ## Known limitations
 
-- **Font embedding + `template` together is not supported.** Embedding a web font writes `ppt/fonts/*` parts and a `<p:embeddedFontLst>` into `presentation.xml`; folding that correctly into a foreign template's own `presentation.xml` (schema-ordered insertion, remapped relationship IDs across two different rId namespaces) is materially riskier OOXML surgery than the slide/layout merge this feature is actually about. Rather than build that out speculatively, `exportToPptx` currently skips font embedding when `template` is set and logs a clear `console.warn` explaining why — PowerPoint falls back to a system font for any custom `@font-face` in that export. This is a deliberate scope cut, not an oversight; contributions welcome.
 - The template's existing slides (if it has any) are left in place; new slides are always appended after them. If you hand in a template that already contains real content slides, they'll still be there in the output.
 - Layout names must match exactly (case-sensitive) and should be unique within the template; if two layouts share a name, the first one (in file order) wins.
+- Embedded-font deduplication is keyed on the exact `(typeface name, variant)` pair. If the template already embeds "Corporate Font" Regular under that exact family name, a newly requested "Corporate Font" Regular is recognized as the same font and not re-embedded; a font declared under a different CSS family name (even if visually identical) is treated as distinct, same as PowerPoint itself would.
 - This feature does not validate the template against the full OOXML schema — a template produced by PowerPoint itself (the overwhelmingly common case) works; a hand-crafted or otherwise unusual package might not.
