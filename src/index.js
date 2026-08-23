@@ -296,28 +296,15 @@ export async function exportToPptx(target, options = {}) {
     );
   }
 
-  if (fontsToEmbed.length > 0 && options.template) {
-    // Font embedding writes ppt/fonts/* and a <p:embeddedFontLst> into
-    // presentation.xml — parts the template merge step below does not
-    // (yet) know how to fold into the template's own presentation.xml.
-    // Rather than risk producing a subtly invalid package, we skip
-    // embedding and fall back to system fonts for this export. See
-    // docs/template-support.md#limitations.
-    console.warn(
-      'dom-to-pptx: font embedding is not currently supported together with the `template` option — ' +
-        'skipping font embedding for this export. PowerPoint will use a fallback system font for ' +
-        `${fontsToEmbed.map((f) => f.name).join(', ')}. See docs/template-support.md#limitations.`
-    );
-  }
-
-  if (fontsToEmbed.length > 0 && !options.template) {
-    // Generate initial PPTX
-    const initialBlob = await pptx.write({ outputType: 'blob' });
-
-    // Load into Embedder
-    const zip = await JSZip.loadAsync(initialBlob);
-    const embedder = new PPTXEmbedFonts();
-    await embedder.loadZip(zip);
+  // The embedder instance is created whenever there are fonts to embed,
+  // regardless of `options.template` — addFont() only fetches/converts font
+  // data into `embedder.fonts`, it doesn't touch a zip yet. When a template
+  // is set, that in-memory font list is handed to mergeTemplate() below
+  // instead of being written into the (discarded) intermediate package, so
+  // the exact same fetch/EOT-conversion logic is reused either way.
+  let embedder = null;
+  if (fontsToEmbed.length > 0) {
+    embedder = new PPTXEmbedFonts();
 
     // Fetch and Embed Concurrently. Track success/failure per (family,variant)
     // so we can print a structured summary at the end — a silent no-op on
@@ -380,16 +367,25 @@ export async function exportToPptx(target, options = {}) {
         console.error(`  - ${r.label}: ${r.reason}`);
       }
     }
+  }
 
+  if (fontsToEmbed.length > 0 && !options.template) {
+    // No template: fonts are embedded directly into the generated package,
+    // exactly as before this feature existed.
+    const initialBlob = await pptx.write({ outputType: 'blob' });
+    const zip = await JSZip.loadAsync(initialBlob);
+    await embedder.loadZip(zip);
     await embedder.updateFiles();
     if (options.skipNormalize !== true) {
       await normalizePptxZip(zip, extendedOptions);
     }
     finalBlob = await embedder.generateBlob();
   } else {
-    // No fonts to embed — still re-zip with DEFLATE and strip dangling Overrides
-    // so Microsoft PowerPoint accepts the file (PptxGenJS leaves both issues
-    // unresolved on its own; see 错误诊断.md).
+    // No fonts to embed, OR a template is set (in which case fonts — if
+    // any — are merged into the *template's* presentation.xml below rather
+    // than this throwaway intermediate package). Still re-zip with DEFLATE
+    // and strip dangling Overrides so Microsoft PowerPoint accepts the file
+    // (PptxGenJS leaves both issues unresolved on its own; see 错误诊断.md).
     const initialBlob = await pptx.write({ outputType: 'blob' });
     if (options.skipNormalize === true) {
       finalBlob = initialBlob;
@@ -404,16 +400,18 @@ export async function exportToPptx(target, options = {}) {
     }
   }
 
-  // 3b. Template Merge (optional): fold the generated slides into the
-  // template package so they inherit its real theme/master/layout
-  // background. Runs after normalization so the merge only ever handles
-  // a single, already-valid PptxGenJS package shape.
+  // 3b. Template Merge (optional): fold the generated slides — and any
+  // fetched/converted fonts — into the template package so they inherit
+  // its real theme/master/layout background. Runs after normalization so
+  // the merge only ever handles a single, already-valid PptxGenJS package
+  // shape.
   if (options.template) {
     finalBlob = await mergeTemplate({
       templateInfo,
       generatedZip: await JSZip.loadAsync(finalBlob),
       slideAssignments: slideBaseLayouts,
       defaultLayoutName: options.defaultBaseLayout,
+      fontsToEmbed: embedder ? embedder.fonts : [],
     });
   }
 
