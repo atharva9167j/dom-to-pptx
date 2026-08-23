@@ -3,7 +3,10 @@ import * as PptxGenJSImport from 'pptxgenjs';
 import html2canvas from 'html2canvas';
 import { PPTXEmbedFonts } from './font-embedder.js';
 import { normalizePptxZip } from './pptx-normalizer.js';
+import { readTemplate, resolveLayout, mergeTemplate, getTemplateLayouts } from './template.js';
 import JSZip from 'jszip';
+
+export { getTemplateLayouts };
 
 // Normalize import
 const PptxGenJS = PptxGenJSImport?.default ?? PptxGenJSImport;
@@ -52,6 +55,18 @@ const PX_TO_INCH = 1 / PPI;
  * @param {boolean} [options.skipNormalize=false] - If true, skips re-zipping with DEFLATE
  *   and stripping dangling [Content_Types].xml Overrides. Leave it false unless you are
  *   debugging the raw PptxGenJS output, otherwise Microsoft PowerPoint may reject the file.
+ * @param {string|ArrayBuffer|Uint8Array|Blob} [options.template] - An existing .pptx to use
+ *   as the base presentation. When set, exported slides inherit a real PowerPoint slide
+ *   layout/master background (see `baseLayout` below) instead of a blank generated one.
+ *   Accepts a URL string (fetched with `fetch`) or raw bytes (ArrayBuffer/Uint8Array/Blob).
+ *   See docs/template-support.md for details and limitations (e.g. font embedding is not
+ *   currently supported together with `template`).
+ * @param {string} [options.defaultBaseLayout] - Layout name used for slides that don't
+ *   specify their own `baseLayout`. Falls back to the template's first declared layout
+ *   if omitted.
+ * @param {HTMLElement | string | Array<HTMLElement | string | {element: HTMLElement | string, baseLayout?: string}>} target -
+ *   In addition to elements/selectors, an entry may be a `{element, baseLayout}` descriptor
+ *   to pick which template layout that specific slide is based on (requires `options.template`).
  * @returns {Promise<Blob>} - Returns the generated PPTX Blob
  */
 export async function exportToPptx(target, options = {}) {
@@ -67,6 +82,11 @@ export async function exportToPptx(target, options = {}) {
   const PptxConstructor = resolvePptxConstructor(PptxGenJS);
   if (!PptxConstructor) throw new Error('PptxGenJS constructor not found.');
   const pptx = new PptxConstructor();
+
+  // Template Handling (optional): load once up front so its declared slide
+  // size can inform layout sizing below, and so per-slide `baseLayout`
+  // names can be validated as slides are processed further down.
+  const templateInfo = options.template ? await readTemplate(options.template) : null;
 
   // 1. Layout Handling
   let finalWidth = 10; // default 16:9
@@ -91,6 +111,16 @@ export async function exportToPptx(target, options = {}) {
       finalWidth = 13.3;
       finalHeight = 7.5;
     }
+  } else if (templateInfo && templateInfo.sldSz) {
+    // Match the template's own declared slide size so shapes line up 1:1
+    // with the real master/layout background it provides. This only
+    // determines the coordinate space PptxGenJS renders into here — the
+    // template's presentation.xml (and its actual <p:sldSz>) is preserved
+    // untouched by the merge step later on.
+    pptx.defineLayout({ name: 'TEMPLATE', width: templateInfo.sldSz.width, height: templateInfo.sldSz.height });
+    pptx.layout = 'TEMPLATE';
+    finalWidth = templateInfo.sldSz.width;
+    finalHeight = templateInfo.sldSz.height;
   } else {
     const firstEl = Array.isArray(target) ? target[0] : target;
     const root = typeof firstEl === 'string' ? document.querySelector(firstEl) : firstEl;
@@ -122,12 +152,37 @@ export async function exportToPptx(target, options = {}) {
   let slideIndex = 0;
   const slideAnimations = {};
   const slideTransitions = {};
-  for (const el of elements) {
+  const slideBaseLayouts = [];
+  const resolvedRoots = []; // plain elements/selectors, unwrapped from any {element, baseLayout} descriptor
+  for (const item of elements) {
+    // Each entry is either an element/selector (existing behavior) or a
+    // {element, baseLayout} descriptor picking which template layout that
+    // slide is based on. Detected via `.nodeType` rather than `instanceof
+    // Element` so this also works for plain selector strings and across
+    // realms (jsdom in tests, a real browser, a puppeteer page).
+    const isDescriptor = item != null && typeof item === 'object' && !item.nodeType && 'element' in item;
+    const el = isDescriptor ? item.element : item;
+    const baseLayout = isDescriptor ? item.baseLayout : undefined;
+
     const root = typeof el === 'string' ? document.querySelector(el) : el;
     if (!root) {
       console.warn('Element not found, skipping slide:', el);
       continue;
     }
+
+    if (baseLayout && !options.template) {
+      console.warn(
+        `dom-to-pptx: slide specifies baseLayout "${baseLayout}" but no \`template\` option was provided — ignoring.`
+      );
+    }
+    // Validate eagerly (per slide) so a bad layout name is reported
+    // against the slide that requested it, rather than only surfacing
+    // once at the very end during the template merge step.
+    if (templateInfo) {
+      resolveLayout(templateInfo, baseLayout, options.defaultBaseLayout);
+    }
+    slideBaseLayouts.push(baseLayout);
+    resolvedRoots.push(root);
 
     const transition = extractTransitionFromElement(root);
     if (transition) {
@@ -191,7 +246,7 @@ export async function exportToPptx(target, options = {}) {
 
   if (options.autoEmbedFonts !== false) {
     // A. Scan DOM for used font families
-    const usedFamilies = getUsedFontFamilies(elements);
+    const usedFamilies = getUsedFontFamilies(resolvedRoots);
 
     // B. Scan CSS for URLs matches (each carries weight+style now)
     const detectedFonts = await getAutoDetectedFonts(usedFamilies);
@@ -241,7 +296,21 @@ export async function exportToPptx(target, options = {}) {
     );
   }
 
-  if (fontsToEmbed.length > 0) {
+  if (fontsToEmbed.length > 0 && options.template) {
+    // Font embedding writes ppt/fonts/* and a <p:embeddedFontLst> into
+    // presentation.xml — parts the template merge step below does not
+    // (yet) know how to fold into the template's own presentation.xml.
+    // Rather than risk producing a subtly invalid package, we skip
+    // embedding and fall back to system fonts for this export. See
+    // docs/template-support.md#limitations.
+    console.warn(
+      'dom-to-pptx: font embedding is not currently supported together with the `template` option — ' +
+        'skipping font embedding for this export. PowerPoint will use a fallback system font for ' +
+        `${fontsToEmbed.map((f) => f.name).join(', ')}. See docs/template-support.md#limitations.`
+    );
+  }
+
+  if (fontsToEmbed.length > 0 && !options.template) {
     // Generate initial PPTX
     const initialBlob = await pptx.write({ outputType: 'blob' });
 
@@ -280,13 +349,7 @@ export async function exportToPptx(target, options = {}) {
             })
           );
 
-          await embedder.addFont(
-            fontCfg.name,
-            subsets,
-            options.woff2WasmUrl,
-            undefined,
-            fontCfg.variant || 'regular'
-          );
+          await embedder.addFont(fontCfg.name, subsets, options.woff2WasmUrl, undefined, fontCfg.variant || 'regular');
           embedResults.push({ label, ok: true });
         } catch (e) {
           const reason = e && e.message ? e.message : String(e);
@@ -339,6 +402,19 @@ export async function exportToPptx(target, options = {}) {
         compressionOptions: { level: 6 },
       });
     }
+  }
+
+  // 3b. Template Merge (optional): fold the generated slides into the
+  // template package so they inherit its real theme/master/layout
+  // background. Runs after normalization so the merge only ever handles
+  // a single, already-valid PptxGenJS package shape.
+  if (options.template) {
+    finalBlob = await mergeTemplate({
+      templateInfo,
+      generatedZip: await JSZip.loadAsync(finalBlob),
+      slideAssignments: slideBaseLayouts,
+      defaultLayoutName: options.defaultBaseLayout,
+    });
   }
 
   // 4. Output Handling
@@ -578,7 +654,10 @@ async function elementToCanvasImage(node, widthPx, heightPx) {
           // 4. Adjust alignment for Icons to prevent baseline clipping
           // (Applies to <i>, <span>, or standard icon classes)
           const tag = (clonedNode?.tagName || '').toLowerCase();
-          const className = typeof clonedNode.className === 'string' ? clonedNode.className : (clonedNode.className && clonedNode.className.baseVal) || '';
+          const className =
+            typeof clonedNode.className === 'string'
+              ? clonedNode.className
+              : (clonedNode.className && clonedNode.className.baseVal) || '';
           if (tag === 'i' || tag === 'span' || className.includes('fa-')) {
             // Flex center helps align the glyph exactly in the middle of the box
             // preventing top/bottom cropping due to line-height mismatches.
@@ -830,7 +909,7 @@ function getPseudoElementRect(hostRect, pseudoStyle) {
   const borderTop = parseFloat(pseudoStyle.borderTopWidth) || 0;
   const borderBottom = parseFloat(pseudoStyle.borderBottomWidth) || 0;
 
-  const isTriangle = (w === 0 && h === 0) && (borderLeft > 0 || borderRight > 0) && (borderTop > 0 || borderBottom > 0);
+  const isTriangle = w === 0 && h === 0 && (borderLeft > 0 || borderRight > 0) && (borderTop > 0 || borderBottom > 0);
   if (isTriangle) {
     w = borderLeft + borderRight;
     h = borderTop + borderBottom;
@@ -945,7 +1024,8 @@ function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, do
   const borderRight = parseFloat(pseudoStyle.borderRightWidth) || 0;
   const borderTop = parseFloat(pseudoStyle.borderTopWidth) || 0;
   const borderBottom = parseFloat(pseudoStyle.borderBottomWidth) || 0;
-  const isTriangle = (wPx === 0 && hPx === 0) && (borderLeft > 0 || borderRight > 0) && (borderTop > 0 || borderBottom > 0);
+  const isTriangle =
+    wPx === 0 && hPx === 0 && (borderLeft > 0 || borderRight > 0) && (borderTop > 0 || borderBottom > 0);
 
   const isDisplayNone = pseudoStyle.display === 'none';
   const isVisible = !isDisplayNone && (hasContent || hasBg || hasBorder || hasGradient || isTriangle);
@@ -955,7 +1035,9 @@ function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, do
   const rect = getPseudoElementRect(hostRect, pseudoStyle);
   if (!rect) {
     if (isVisible) {
-      console.warn(`dom-to-pptx: Unsupported pseudo-element ${pseudoType} on ${getNodeSelector(node)} due to zero dimensions. Element dropped.`);
+      console.warn(
+        `dom-to-pptx: Unsupported pseudo-element ${pseudoType} on ${getNodeSelector(node)} due to zero dimensions. Element dropped.`
+      );
     }
     return null;
   }
