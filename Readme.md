@@ -67,6 +67,10 @@ Most HTML-to-PPTX libraries fail when faced with modern web design. They break o
 - **Border Radius Math:** Calculates perfect corner rounding percentages based on element dimensions.
 - **Client-Side:** Runs entirely in the browser. No server required.
 
+### 🏢 Template Support (Optional)
+
+- **Base an export on an existing `.pptx`:** Pass `template: './corporate-template.pptx'` to have exported slides inherit a real PowerPoint slide layout/master background — theme, logo, footer, accent bars — via genuine PowerPoint layout inheritance, not a screenshot. See [`docs/template-support.md`](docs/template-support.md) for the full writeup, API, and limitations.
+
 ## ✨ Featured Project: Preso AI
 
 **[Preso AI](https://preso-ai.vercel.app)** is a state-of-the-art AI presentation builder built entirely on top of the `dom-to-pptx` engine. It demonstrates the full potential of this library by transforming AI-generated content into premium, editable PowerPoint decks.
@@ -201,7 +205,29 @@ await exportToPptx('#slide-with-charts', {
 
 In PowerPoint, right-click the SVG image and select **"Convert to Shape"** (or **Group > Ungroup**) to make it fully editable.
 
-### 5. Animated Slides & Transitions (New in v2.0.0)
+### 5. Template Support (Base on an Existing `.pptx`)
+
+Base exported slides on a real PowerPoint template so they inherit its actual slide layout/master background instead of a blank generated one:
+
+```javascript
+import { exportToPptx } from 'dom-to-pptx';
+
+await exportToPptx(
+  [
+    { element: document.querySelector('#slide-1'), baseLayout: 'Content Light' },
+    { element: document.querySelector('#slide-2'), baseLayout: 'Section Dark' },
+  ],
+  {
+    fileName: 'branded-deck.pptx',
+    template: './corporate-template.pptx',
+    defaultBaseLayout: 'Content Light', // used for any slide without its own baseLayout
+  }
+);
+```
+
+See [`docs/template-support.md`](docs/template-support.md) for how layouts are resolved, default behavior, error handling, and known limitations (e.g. font embedding is not currently supported together with `template`).
+
+### 6. Animated Slides & Transitions (New in v2.0.0)
 
 Animations and transitions are applied declaratively via CSS classes — no extra JavaScript options are needed. Just link the animation stylesheet (note: slide-to-slide transitions are not previewed in the browser; only element animations are) so motion previews correctly in the browser, then export as usual.
 
@@ -258,7 +284,7 @@ The `applyBrowserAnimations(parentElement, options)` helper configures the brows
 
 > For the complete, exhaustive list of all 20+ animations and 70+ transitions with names and previews, see `ANIMATIONS_WHITELIST.md` and `TRANSITIONS_WHITELIST.md` (installed via `npx dom-to-pptx-skills`, or available in the repo's `reference/` directory).
 
-### 6. Browser Usage (Script Tags)
+### 7. Browser Usage (Script Tags)
 
 You can use `dom-to-pptx` directly via CDN. The bundle includes all dependencies.
 
@@ -416,7 +442,7 @@ Returns: `Promise<Blob>` - Resolves with the generated PPTX file data (Blob).
 
 | Parameter           | Type                                                        | Description                                                                                                        |
 | :------------------ | :---------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
-| `elementOrSelector` | `string` \| `HTMLElement` \| `Array<string \| HTMLElement>` | The DOM node(s) or ID selector(s) to convert. Can be a single element/selector or an array for multi-slide export. |
+| `elementOrSelector` | `string` \| `HTMLElement` \| `Array<string \| HTMLElement \| {element, baseLayout}>` | The DOM node(s) or ID selector(s) to convert. Can be a single element/selector or an array for multi-slide export. An array entry may be a `{element, baseLayout}` descriptor to pick a template layout for that slide (see `template` below). |
 | `options`           | `object`                                                    | Configuration object.                                                                                              |
 
 **Options Object:**
@@ -432,8 +458,10 @@ Returns: `Promise<Blob>` - Resolves with the generated PPTX file data (Blob).
 | `width`          | `number`  | `10`            | Custom slide width in inches (requires `height` to be set).                                                   |
 | `height`         | `number`  | `5.625`         | Custom slide height in inches (requires `width` to be set).                                                   |
 | `listConfig`     | `object`  | `undefined`     | Global overrides for list styles. Structure: `{ color: string, spacing: { before: number, after: number } }`. |
+| `template`       | `string` \| `ArrayBuffer` \| `Uint8Array` \| `Blob` | `undefined` | Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [Template Support](docs/template-support.md). |
+| `defaultBaseLayout` | `string` | template's first layout | Layout name (from `template`) used for any slide that doesn't set its own `baseLayout`. |
 
-> Note: animations and transitions are controlled entirely through CSS classes on your elements (see [Animated Slides & Transitions](#5-animated-slides--transitions-new-in-v120)), not through the `options` object.
+> Note: animations and transitions are controlled entirely through CSS classes on your elements (see [Animated Slides & Transitions](#6-animated-slides--transitions-new-in-v120)), not through the `options` object.
 
 **List Configuration Example:**
 
@@ -445,6 +473,10 @@ listConfig: {
   }
 }
 ```
+
+### `getTemplateLayouts(template)`
+
+Returns: `Promise<Array<{id: string, name: string}>>` — the slide layouts declared in an existing `.pptx`, e.g. for building a layout picker upstream of `dom-to-pptx`. `id` is the internal OOXML part path; `name` is what you pass as `baseLayout`/`defaultBaseLayout`. See [Template Support](docs/template-support.md).
 
 ### `applyBrowserAnimations(parentElement, options)`
 

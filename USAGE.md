@@ -77,6 +77,8 @@ npx dom-to-pptx-exporter slides.html --output output.pptx -s ".slide"
 - `--width <number>`: Set slide width in inches (default: `10`).
 - `--height <number>`: Set slide height in inches (default: `5.625`).
 - `--no-pseudo`: Disable exporting CSS pseudo-elements (::before/::after).
+- `--template <path>`: Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [`docs/template-support.md`](docs/template-support.md).
+- `--base-layout <name>`: Layout name from `--template` applied to every exported slide (the CLI has no way to assign a different layout per slide — that's a programmatic-API-only feature).
 
 ### 3. Standalone AI Skills Installer CLI (`dom-to-pptx-skills`)
 
