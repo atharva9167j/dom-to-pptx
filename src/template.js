@@ -26,11 +26,41 @@ const PRESENTATION_RELS_PATH = 'ppt/_rels/presentation.xml.rels';
 const CT_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main';
 const SLIDE_REL_TYPE = `${R_NS}/slide`;
 const SLIDELAYOUT_REL_TYPE = `${R_NS}/slideLayout`;
 const NOTESSLIDE_REL_TYPE = `${R_NS}/notesSlide`;
 const NOTESMASTER_REL_TYPE = `${R_NS}/notesMaster`;
 const IMAGE_REL_TYPE = `${R_NS}/image`;
+const FONT_REL_TYPE = `${R_NS}/font`;
+const FNTDATA_CONTENT_TYPE = 'application/x-fontdata';
+
+// CT_Presentation child element order per the OOXML schema (ECMA-376
+// §19.2.1.26) — used so <p:embeddedFontLst> is inserted at a schema-valid
+// position instead of always appended at the end, which would produce an
+// invalid package for any template whose presentation.xml has elements
+// after where embeddedFontLst belongs (e.g. custShowLst, defaultTextStyle).
+const PRESENTATION_CHILD_ORDER = [
+  'sldMasterIdLst',
+  'notesMasterIdLst',
+  'handoutMasterIdLst',
+  'sldIdLst',
+  'sldSz',
+  'notesSz',
+  'smartTags',
+  'embeddedFontLst',
+  'custShowLst',
+  'photoAlbum',
+  'custDataLst',
+  'kinsoku',
+  'defaultTextStyle',
+  'modifyVerifier',
+  'extLst',
+];
+
+// CT_EmbeddedFontListEntry child order: <p:font> then up to one of each
+// variant slot, in this fixed order.
+const EMBEDDED_FONT_CHILD_ORDER = ['font', 'regular', 'bold', 'italic', 'boldItalic'];
 
 /**
  * Loads a JSZip instance from a `template` option value.
@@ -108,6 +138,30 @@ function resolveRelativeTarget(fromDir, target) {
     else parts.push(seg);
   }
   return parts.join('/');
+}
+
+/**
+ * Inserts `newEl` as a child of `parent` at the position dictated by
+ * `orderArray` (a list of localNames in schema order): before the first
+ * existing child whose localName sorts later than `newEl`'s, or appended
+ * at the end if none do. Existing children whose localName isn't in
+ * `orderArray` (foreign/unrecognized elements) are ignored for ordering
+ * purposes rather than treated as a hard stop. Shared by the
+ * <p:presentation> child ordering (embeddedFontLst) and the
+ * <p:embeddedFont> variant ordering (regular/bold/italic/boldItalic).
+ */
+function insertInOrder(parent, newEl, orderArray) {
+  const newIdx = orderArray.indexOf(newEl.localName);
+  let refNode = null;
+  for (const child of Array.from(parent.childNodes)) {
+    if (child.nodeType !== 1) continue;
+    const idx = orderArray.indexOf(child.localName);
+    if (idx === -1 || idx <= newIdx) continue;
+    refNode = child;
+    break;
+  }
+  if (refNode) parent.insertBefore(newEl, refNode);
+  else parent.appendChild(newEl);
 }
 
 /** Inverse of resolveRelativeTarget: builds a relative Target from fromDir to an absolute zip path. */
@@ -237,6 +291,78 @@ function findDefaultContentType(doc, ext) {
 }
 
 /**
+ * Merges pre-converted embedded fonts (see PPTXEmbedFonts.fonts —
+ * `{name, variant, data}`, already fetched and converted to .fntdata) into
+ * the template's own <p:embeddedFontLst>. Deduplicates by (typeface,
+ * variant) against whatever the template already has embedded — an
+ * existing entry is never removed, overwritten, or re-embedded. New font
+ * files are numbered past whatever `ppt/fonts/fontN.fntdata` files the
+ * template already contains, and relationship IDs are allocated through
+ * the same collision-free counter used for the new slides, so this never
+ * collides with the template's own (possibly already-high) rIds.
+ */
+function mergeFonts({ presDoc, templateZip, addPresRelationship, ensureDefaultExtensionWithType, fontsToEmbed }) {
+  let embeddedFontLst = findFirstByLocalName(presDoc, 'embeddedFontLst');
+  if (!embeddedFontLst) {
+    embeddedFontLst = presDoc.createElementNS(P_NS, 'p:embeddedFontLst');
+    insertInOrder(presDoc.documentElement, embeddedFontLst, PRESENTATION_CHILD_ORDER);
+  }
+
+  // Index what's already embedded (from the template itself, and from any
+  // earlier <p:embeddedFont> this function may have just created) so a
+  // (typeface, variant) already present is never duplicated, and so a new
+  // variant for an already-declared typeface is added to that same
+  // <p:embeddedFont> block rather than a second, conflicting one.
+  const embedFontElByTypeface = new Map();
+  const existingVariantKeys = new Set();
+  for (const embedFontEl of findAllByLocalName(embeddedFontLst, 'embeddedFont')) {
+    const fontEl = Array.from(embedFontEl.childNodes).find((n) => n.nodeType === 1 && n.localName === 'font');
+    const typeface = fontEl ? fontEl.getAttribute('typeface') : null;
+    if (!typeface) continue;
+    embedFontElByTypeface.set(typeface, embedFontEl);
+    for (const child of Array.from(embedFontEl.childNodes)) {
+      if (child.nodeType === 1 && child.localName !== 'font' && EMBEDDED_FONT_CHILD_ORDER.includes(child.localName)) {
+        existingVariantKeys.add(`${typeface}::${child.localName}`);
+      }
+    }
+  }
+
+  let fontFileCounter = maxNum(numberedParts(templateZip, /^ppt\/fonts\/font(\d+)\.fntdata$/));
+
+  for (const font of fontsToEmbed) {
+    const variant = font.variant || 'regular';
+    const key = `${font.name}::${variant}`;
+    if (existingVariantKeys.has(key)) continue; // already embedded (template or earlier in this batch) — skip
+    existingVariantKeys.add(key);
+
+    fontFileCounter++;
+    const fontPath = `ppt/fonts/font${fontFileCounter}.fntdata`;
+    templateZip.file(fontPath, font.data);
+    ensureDefaultExtensionWithType('fntdata', FNTDATA_CONTENT_TYPE);
+
+    const rId = addPresRelationship(FONT_REL_TYPE, relativeTarget('ppt', fontPath));
+
+    let embedFontEl = embedFontElByTypeface.get(font.name);
+    if (!embedFontEl) {
+      embedFontEl = presDoc.createElementNS(P_NS, 'p:embeddedFont');
+      const fontNode = presDoc.createElementNS(P_NS, 'p:font');
+      fontNode.setAttribute('typeface', font.name);
+      embedFontEl.appendChild(fontNode);
+      embeddedFontLst.appendChild(embedFontEl);
+      embedFontElByTypeface.set(font.name, embedFontEl);
+    }
+
+    const variantEl = presDoc.createElementNS(P_NS, 'p:' + variant);
+    variantEl.setAttributeNS(R_NS, 'r:id', rId);
+    insertInOrder(embedFontEl, variantEl, EMBEDDED_FONT_CHILD_ORDER);
+  }
+
+  // Matches PPTXEmbedFonts' existing convention for these two flags.
+  presDoc.documentElement.setAttribute('saveSubsetFonts', 'true');
+  presDoc.documentElement.setAttribute('embedTrueTypeFonts', 'true');
+}
+
+/**
  * Merges the slides of a freshly-generated PptxGenJS package into an
  * existing template package, so the merged slides inherit the template's
  * real theme/master/layout background instead of PptxGenJS's own
@@ -246,14 +372,22 @@ function findDefaultContentType(doc, ext) {
  * and existing slides are preserved as-is; only new parts for the
  * generated slides (and their notes slides / referenced media) are added.
  *
+ * Optionally also merges pre-fetched/pre-converted embedded fonts (see
+ * `fontsToEmbed`) into the template's own `<p:embeddedFontLst>`, so
+ * `template` and font embedding can be used together — existing embedded
+ * fonts in the template (if any) are preserved, and a font already present
+ * for a given (typeface, variant) is not re-embedded.
+ *
  * @param {object} args
  * @param {{zip: JSZip, layouts: Array, notesMasterId: string|null, sldSz: object|null}} args.templateInfo - from readTemplate()
  * @param {JSZip} args.generatedZip - the PptxGenJS-produced package to merge from
  * @param {Array<string|undefined>} args.slideAssignments - per-slide `baseLayout` name (or undefined), one entry per generated slide, in order
  * @param {string} [args.defaultLayoutName] - layout name to use for slides without an explicit assignment
+ * @param {Array<{name: string, variant?: string, data: ArrayBuffer|Uint8Array}>} [args.fontsToEmbed] - fonts already
+ *   fetched and converted to PowerPoint's .fntdata format (e.g. `PPTXEmbedFonts.fonts`), to embed into the template.
  * @returns {Promise<Blob>}
  */
-export async function mergeTemplate({ templateInfo, generatedZip, slideAssignments, defaultLayoutName }) {
+export async function mergeTemplate({ templateInfo, generatedZip, slideAssignments, defaultLayoutName, fontsToEmbed }) {
   const templateZip = templateInfo.zip;
 
   const slideOffset = maxNum(numberedParts(templateZip, /^ppt\/slides\/slide(\d+)\.xml$/));
@@ -290,14 +424,18 @@ export async function mergeTemplate({ templateInfo, generatedZip, slideAssignmen
     contentTypesDoc.documentElement.appendChild(el);
   }
 
-  function ensureDefaultExtension(ext) {
+  function ensureDefaultExtensionWithType(ext, contentType) {
     if (findDefaultContentType(contentTypesDoc, ext)) return;
-    const contentType = findDefaultContentType(generatedContentTypesDoc, ext);
-    if (!contentType) return; // unknown extension — nothing we can copy
     const el = contentTypesDoc.createElementNS(CT_NS, 'Default');
     el.setAttribute('Extension', ext);
     el.setAttribute('ContentType', contentType);
     contentTypesDoc.documentElement.appendChild(el);
+  }
+
+  function ensureDefaultExtension(ext) {
+    const contentType = findDefaultContentType(generatedContentTypesDoc, ext);
+    if (!contentType) return; // unknown extension — nothing we can copy
+    ensureDefaultExtensionWithType(ext, contentType);
   }
 
   function addPresRelationship(type, target) {
@@ -402,6 +540,16 @@ export async function mergeTemplate({ templateInfo, generatedZip, slideAssignmen
     sldIdEl.setAttribute('id', String(nextSldId++));
     sldIdEl.setAttributeNS(R_NS, 'r:id', slideRelId);
     sldIdLstEl.appendChild(sldIdEl);
+  }
+
+  if (fontsToEmbed && fontsToEmbed.length > 0) {
+    mergeFonts({
+      presDoc,
+      templateZip,
+      addPresRelationship,
+      ensureDefaultExtensionWithType,
+      fontsToEmbed,
+    });
   }
 
   templateZip.file(CONTENT_TYPES_PATH, serializeXmlWithDeclaration(contentTypesDoc));
