@@ -32,7 +32,6 @@ export function getLaunchArgs(product) {
   return ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'];
 }
 
-
 // ─── Platform-aware browser search map ───────────────────────────────────────
 // Each entry is { name, product, paths[] }.
 // `product` is 'chrome' or 'firefox' — controls puppeteer launch args.
@@ -188,7 +187,10 @@ async function ensureBrowser(puppeteer) {
  * @param {Object} [options={}] - Export configuration options.
  * @param {string} [options.selector='.slide'] - CSS selector for slide elements.
  * @param {boolean} [options.injectBundle=false] - Force injection of the local browser bundle.
- * @param {Object} [options.pptxOptions={}] - Settings passed directly to exportToPptx.
+ * @param {Object} [options.pptxOptions={}] - Settings passed directly to exportToPptx. If
+ *   `pptxOptions.template` is a path to a local file, it is read from disk and forwarded into
+ *   the page as raw bytes (exportToPptx's `template` option otherwise only accepts a URL
+ *   string or in-memory bytes, since it always runs inside a browser/page context).
  * @returns {Promise<Buffer>} - PPTX output buffer.
  */
 export async function exportHtmlToPptx(htmlSource, options = {}) {
@@ -290,6 +292,21 @@ export async function exportHtmlToPptx(htmlSource, options = {}) {
     const selector = options.selector || '.slide';
     console.log(`Running programmatic extraction for slide elements matching: ${selector}`);
 
+    // exportToPptx's `template` option runs inside the page and only accepts
+    // a URL string or in-memory bytes — it has no `fs` access. A local file
+    // path here is read on this (Node) side and forwarded as base64, then
+    // reconstructed into a Uint8Array inside the page below.
+    const pptxOptions = { ...(options.pptxOptions || {}) };
+    if (
+      typeof pptxOptions.template === 'string' &&
+      !/^https?:\/\//i.test(pptxOptions.template) &&
+      fs.existsSync(pptxOptions.template)
+    ) {
+      const templateBuffer = fs.readFileSync(path.resolve(pptxOptions.template));
+      pptxOptions.template = templateBuffer.toString('base64');
+      pptxOptions._templateEncoding = 'base64';
+    }
+
     let dataUrl;
     try {
       dataUrl = await page.evaluate(
@@ -303,8 +320,17 @@ export async function exportHtmlToPptx(htmlSource, options = {}) {
             throw new Error(`No elements matching slide selector "${sel}" found.`);
           }
 
+          let resolvedPptxOpts = pptxOpts;
+          if (pptxOpts && pptxOpts._templateEncoding === 'base64' && typeof pptxOpts.template === 'string') {
+            const binary = atob(pptxOpts.template);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            resolvedPptxOpts = { ...pptxOpts, template: bytes };
+            delete resolvedPptxOpts._templateEncoding;
+          }
+
           const blob = await window.domToPptx.exportToPptx(targets, {
-            ...pptxOpts,
+            ...resolvedPptxOpts,
             skipDownload: true,
           });
 
@@ -316,7 +342,7 @@ export async function exportHtmlToPptx(htmlSource, options = {}) {
           });
         },
         selector,
-        options.pptxOptions || {}
+        pptxOptions
       );
     } catch (err) {
       throw new Error(`Programmatic export failed: ${err.message}`);
