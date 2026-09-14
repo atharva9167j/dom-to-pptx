@@ -16,6 +16,8 @@
  *   --height       <number>        Slide height in inches [default: 5.625]
  *   --browser-width, --bw <num>    Headless browser viewport width in pixels [default: width * 192]
  *   --browser-height, --bh <num>   Headless browser viewport height in pixels [default: height * 192]
+ *   --template     <path>          Base the export on an existing .pptx (real master/layout background)
+ *   --base-layout  <name>          Layout name from --template applied to every exported slide
  *   --help, -h                     Show this help message
  */
 
@@ -68,6 +70,8 @@ function printHelp() {
     ['--browser-width, --bw <num>', 'Viewport width in px (default: slide width * 192)'],
     ['--browser-height, --bh <num>', 'Viewport height in px (default: slide height * 192)'],
     ['--no-pseudo', 'Disable exporting CSS pseudo-elements (::before/::after)'],
+    ['--template     <path>', 'Base the export on an existing .pptx (real master/layout background)'],
+    ['--base-layout  <name>', 'Layout name from --template applied to every exported slide'],
     ['--help,    -h', 'Show this help message'],
   ];
   opts.forEach(([flag, desc]) => {
@@ -110,6 +114,10 @@ function parseArgs(argv) {
       args.browserWidth = parseInt(argv[++i], 10);
     } else if ((a === '--browser-height' || a === '--bh') && argv[i + 1]) {
       args.browserHeight = parseInt(argv[++i], 10);
+    } else if (a === '--template' && argv[i + 1]) {
+      args.template = argv[++i];
+    } else if (a === '--base-layout' && argv[i + 1]) {
+      args.baseLayout = argv[++i];
     } else if (!a.startsWith('-')) {
       args._.push(a);
     }
@@ -176,8 +184,18 @@ async function runExporter(argv) {
     pptxOptions: {
       ...(args.title && { title: args.title }),
       ...(args.author && { author: args.author }),
-      width: slideWidth,
-      height: slideHeight,
+      ...(args.template && { template: args.template }),
+      // The CLI selects slides by CSS selector, with no way to assign a
+      // different layout per slide — every exported slide uses this same
+      // layout (or the template's own default layout if omitted). Per-slide
+      // layout selection is a programmatic-API-only feature (see
+      // docs/template-support.md).
+      ...(args.baseLayout && { defaultBaseLayout: args.baseLayout }),
+      // Only force explicit slide dimensions when the caller actually asked
+      // for them. With --template and no --width/--height, exportToPptx
+      // adopts the template's own declared slide size instead — passing our
+      // 10x5.625in fallback here would silently override that.
+      ...((args.width || args.height || !args.template) && { width: slideWidth, height: slideHeight }),
       includePseudoElements: !args.noPseudo,
     },
   };
@@ -231,18 +249,22 @@ async function runExporter(argv) {
         }
       }
     } catch (zipErr) {
-      console.warn(`${c.yellow}⚠️  Warning: Failed to parse generated PPTX to verify dimensions: ${zipErr.message}${c.reset}`);
+      console.warn(
+        `${c.yellow}⚠️  Warning: Failed to parse generated PPTX to verify dimensions: ${zipErr.message}${c.reset}`
+      );
     }
 
     fs.writeFileSync(outputPath, buffer);
     console.log(`\n${c.green}${c.bold}✅  Export complete!${c.reset}`);
     console.log(`   ${c.dim}Saved to:${c.reset} ${c.cyan}${outputPath}${c.reset}`);
-    console.log(`   ${c.dim}Effective Slide Dimensions:${c.reset} ${c.yellow}${effectiveWidth}" x ${effectiveHeight}"${c.reset}`);
+    console.log(
+      `   ${c.dim}Effective Slide Dimensions:${c.reset} ${c.yellow}${effectiveWidth}" x ${effectiveHeight}"${c.reset}`
+    );
 
     if (Math.abs(effectiveWidth - slideWidth) > 0.01 || Math.abs(effectiveHeight - slideHeight) > 0.01) {
       console.warn(
         `   ${c.yellow}⚠️  Warning: Requested dimensions (${slideWidth}" x ${slideHeight}") ` +
-        `differ from effective slide dimensions (${effectiveWidth}" x ${effectiveHeight}").${c.reset}\n`
+          `differ from effective slide dimensions (${effectiveWidth}" x ${effectiveHeight}").${c.reset}\n`
       );
     } else {
       console.log();
