@@ -1568,9 +1568,18 @@ export function collectTextParts(
   scale,
   activeHyperlink = null,
   isRoot = true,
-  inheritedOpacity = 1
+  inheritedOpacity = 1,
+  paragraphStyle = parentStyle
 ) {
   const parts = [];
+  const paragraphLineSpacing = getTextStyle(paragraphStyle, scale, true, inheritedOpacity).lineSpacing;
+  const getRunStyle = (style, ignoreMargins) => {
+    const options = getTextStyle(style, scale, ignoreMargins, inheritedOpacity);
+    // PptxGenJS takes paragraph spacing from the final run, so inline runs must share it.
+    if (paragraphLineSpacing === undefined) delete options.lineSpacing;
+    else options.lineSpacing = paragraphLineSpacing;
+    return options;
+  };
   let hyperlink = activeHyperlink;
 
   // Hyperlink inheritance: If no hyperlink is active, check if this node is an <a> or inside one.
@@ -1592,7 +1601,7 @@ export function collectTextParts(
       // Strip quotes
       const cleanContent = content.replace(/^['"]|['"]$/g, '');
       if (cleanContent.trim()) {
-        const textOpts = getTextStyle(beforeStyle, scale, false, inheritedOpacity);
+        const textOpts = getRunStyle(beforeStyle, false);
         if (hyperlink) textOpts.hyperlink = hyperlink;
 
         // Apply __spc_ suffix if charSpacing is defined
@@ -1630,7 +1639,7 @@ export function collectTextParts(
           textTransform: wsStyle.textTransform,
         });
         if (segs.length) {
-          const baseOpts = getTextStyle(wsStyle, scale, !isRoot, inheritedOpacity);
+          const baseOpts = getRunStyle(wsStyle, !isRoot);
           if (hyperlink) baseOpts.hyperlink = hyperlink;
           if (baseOpts.charSpacing !== undefined && baseOpts.fontFace) {
             baseOpts.fontFace = `${baseOpts.fontFace}__spc_${Math.round(baseOpts.charSpacing * 100)}`;
@@ -1670,7 +1679,7 @@ export function collectTextParts(
         else if (transform === 'lowercase') val = val.toLowerCase();
         else if (transform === 'capitalize') val = val.replace(/\b\w/g, (c) => c.toUpperCase());
 
-        const textOpts = getTextStyle(styleToUse, scale, !isRoot, inheritedOpacity);
+        const textOpts = getRunStyle(styleToUse, !isRoot);
         if (hyperlink) textOpts.hyperlink = hyperlink;
 
         // Apply __spc_ suffix if charSpacing is defined
@@ -1713,7 +1722,15 @@ export function collectTextParts(
           parts.push({ text: '', options: { breakLine: true } });
         }
 
-        const childParts = collectTextParts(child, parentStyle, scale, hyperlink, false, inheritedOpacity);
+        const childParts = collectTextParts(
+          child,
+          parentStyle,
+          scale,
+          hyperlink,
+          false,
+          inheritedOpacity,
+          isBlock ? window.getComputedStyle(child) : paragraphStyle
+        );
         if (childParts.length > 0) parts.push(...childParts);
 
         if (isBlock) {
@@ -1732,7 +1749,7 @@ export function collectTextParts(
       // Strip quotes
       const cleanContent = content.replace(/^['"]|['"]$/g, '');
       if (cleanContent.trim()) {
-        const textOpts = getTextStyle(afterStyle, scale, false, inheritedOpacity);
+        const textOpts = getRunStyle(afterStyle, false);
         if (hyperlink) textOpts.hyperlink = hyperlink;
 
         // Apply __spc_ suffix if charSpacing is defined

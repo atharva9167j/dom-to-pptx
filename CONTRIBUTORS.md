@@ -21,3 +21,4 @@ A huge thank you to everyone who has contributed to `dom-to-pptx`! This project 
 - [Christopher Slowe](https://github.com/KeyserSosa)
 - [Mareks Gaļanskis](https://github.com/pfmareks)
 - [wondy-dev](https://github.com/wondy-dev)
+- [chrisglace-elicit](https://github.com/chrisglace-elicit)
