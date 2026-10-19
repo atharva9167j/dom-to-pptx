@@ -419,6 +419,7 @@ exportToPptx(elementOrSelector, options);
 | `options.skipDownload`      | `boolean`                                                                     | Do not auto-download; return Blob                                                                                 |
 | `options.svgAsVector`       | `boolean`                                                                     | Preserve SVGs as vectors (default: `false`)                                                                       |
 | `options.listConfig`        | `object`                                                                      | List style configuration                                                                                          |
+| `options.lang`              | `string`                                                                      | Text language, defaults to `"en-US"`                                                                              |
 | `options.template`          | `string \| ArrayBuffer \| Uint8Array \| Blob`                                | Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [Template Support](docs/template-support.md). |
 | `options.defaultBaseLayout` | `string`                                                                      | Layout name (from `options.template`) used for any slide that doesn't set its own `baseLayout`. Falls back to the template's first declared layout if omitted. |
 

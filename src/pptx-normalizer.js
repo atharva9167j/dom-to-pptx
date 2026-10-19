@@ -124,6 +124,10 @@ export async function normalizePptxZip(zip, options = {}) {
         mutated = true;
       }
 
+      if (options.lang && applyLanguage(doc, options.lang)) {
+        mutated = true;
+      }
+
       if (relativePath.startsWith('ppt/slides/slide')) {
         const slideMatch = relativePath.match(/ppt\/slides\/slide(\d+)\.xml/);
         const slideIndex = slideMatch ? parseInt(slideMatch[1], 10) - 1 : -1;
@@ -270,6 +274,23 @@ function restoreCharSpacing(doc) {
       if (parent.getAttribute('spc') !== spcVal) {
         parent.setAttribute('spc', spcVal);
       }
+    }
+  }
+  return mutated;
+}
+
+// PptxGenJS hard-codes en-US in parts no option reaches (masters, notes) and adds altLang="en-US"
+// wherever lang is set.
+function applyLanguage(doc, lang) {
+  let mutated = false;
+  for (const el of Array.from(doc.getElementsByTagName('*'))) {
+    if (el.getAttribute('lang') === 'en-US' && lang !== 'en-US') {
+      el.setAttribute('lang', lang);
+      mutated = true;
+    }
+    if (el.getAttribute('altLang') === 'en-US') {
+      el.removeAttribute('altLang');
+      mutated = true;
     }
   }
   return mutated;
