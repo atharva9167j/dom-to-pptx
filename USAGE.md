@@ -77,6 +77,8 @@ npx dom-to-pptx-exporter slides.html --output output.pptx -s ".slide"
 - `--width <number>`: Set slide width in inches (default: `10`).
 - `--height <number>`: Set slide height in inches (default: `5.625`).
 - `--no-pseudo`: Disable exporting CSS pseudo-elements (::before/::after).
+- `--template <path>`: Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [`docs/template-support.md`](docs/template-support.md).
+- `--base-layout <name>`: Layout name from `--template` applied to every exported slide (the CLI has no way to assign a different layout per slide — that's a programmatic-API-only feature).
 
 ### 3. Standalone AI Skills Installer CLI (`dom-to-pptx-skills`)
 
@@ -408,16 +410,18 @@ exportToPptx(elementOrSelector, options);
 
 ### Parameters
 
-| Parameter                | Type                             | Description                                   |
-| ------------------------ | -------------------------------- | --------------------------------------------- |
-| `elementOrSelector`      | `string \| HTMLElement \| Array` | DOM element or selector                       |
-| `options.fileName`       | `string`                         | Filename, defaults to `"export.pptx"`         |
-| `options.autoEmbedFonts` | `boolean`                        | Automatically embed fonts, defaults to `true` |
-| `options.fonts`          | `Array<{name, url}>`             | Manually specify fonts                        |
-| `options.skipDownload`   | `boolean`                        | Do not auto-download; return Blob             |
-| `options.svgAsVector`    | `boolean`                        | Preserve SVGs as vectors (default: `false`)   |
-| `options.listConfig`     | `object`                         | List style configuration                      |
-| `options.lang`           | `string`                         | Text language, defaults to `"en-US"`          |
+| Parameter                   | Type                                                                        | Description                                                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `elementOrSelector`         | `string \| HTMLElement \| Array<string \| HTMLElement \| {element, baseLayout}>` | DOM element, selector, or array of them. An array entry may instead be a `{element, baseLayout}` descriptor to pick which `options.template` layout that specific slide uses. |
+| `options.fileName`          | `string`                                                                      | Filename, defaults to `"export.pptx"`                                                                             |
+| `options.autoEmbedFonts`    | `boolean`                                                                     | Automatically embed fonts, defaults to `true`                                                                     |
+| `options.fonts`             | `Array<{name, url}>`                                                         | Manually specify fonts                                                                                            |
+| `options.skipDownload`      | `boolean`                                                                     | Do not auto-download; return Blob                                                                                 |
+| `options.svgAsVector`       | `boolean`                                                                     | Preserve SVGs as vectors (default: `false`)                                                                       |
+| `options.listConfig`        | `object`                                                                      | List style configuration                                                                                          |
+| `options.lang`              | `string`                                                                      | Text language, defaults to `"en-US"`                                                                              |
+| `options.template`          | `string \| ArrayBuffer \| Uint8Array \| Blob`                                | Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [Template Support](docs/template-support.md). |
+| `options.defaultBaseLayout` | `string`                                                                      | Layout name (from `options.template`) used for any slide that doesn't set its own `baseLayout`. Falls back to the template's first declared layout if omitted. |
 
 ### Returns
 

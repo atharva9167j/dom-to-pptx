@@ -432,7 +432,7 @@ function sortSpTree(doc) {
   return mutated;
 }
 
-function serializeXmlWithDeclaration(doc) {
+export function serializeXmlWithDeclaration(doc) {
   let serialized = new XMLSerializer().serializeToString(doc);
   if (!serialized.startsWith('<?xml')) {
     serialized = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + serialized;
