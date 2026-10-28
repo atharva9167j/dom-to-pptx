@@ -154,6 +154,7 @@ If using `<style>` tags, ensure styles are applied correctly during export:
 | Font Styles              | `font-size`, `font-weight`, `font-family`, `color`                                                                          |
 | Text Transformations     | `text-transform: uppercase`                                                                                                 |
 | Letter Spacing           | `letter-spacing: 2px`                                                                                                       |
+| Text Stroke              | `-webkit-text-stroke: 2px #fff` (exported as a text outline; a translucent stroke color exports opaque)                     |
 | Padding                  | `padding: 20px`                                                                                                             |
 | Opacity                  | `opacity: 0.8`                                                                                                              |
 | Blur effects             | `filter: blur(10px)`                                                                                                        |

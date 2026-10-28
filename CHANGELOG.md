@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Text Stroke as Text Outline**: `getTextStyle` in `src/utils.js` maps CSS `-webkit-text-stroke` to the PptxGenJS `outline` text option, so stroked text exports with a native PowerPoint text outline (`<a:ln>`) instead of losing it. Width converts like `font-size` (px × 0.75 × scale); fully transparent strokes are skipped, and translucent stroke colors export opaque because PptxGenJS writes the outline color without alpha (#74).
+
 ## [2.1.2] - 2026-09-14
 
 ### Added
