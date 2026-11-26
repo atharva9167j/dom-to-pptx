@@ -301,4 +301,19 @@ describe('runExporter (stubbed exporter, no real browser)', () => {
     expect(allLoggedText(logSpy)).not.toContain('adopted from --template');
     expect(exit).toHaveBeenCalledWith(0);
   });
+
+  it('parses and forwards --lang to pptxOptions', async () => {
+    const parsed = parseArgs(['slides.html', '--lang', 'de-DE']);
+    expect(parsed.lang).toBe('de-DE');
+
+    setup();
+    const stubExporter = vi.fn(async () => buildFakePptxBuffer(10, 5.625));
+    const exit = vi.fn();
+
+    await runExporter([htmlPath, '--lang', 'fr-FR'], { loadExporter: async () => stubExporter, exit });
+
+    const [, exporterOptions] = stubExporter.mock.calls[0];
+    expect(exporterOptions.pptxOptions.lang).toBe('fr-FR');
+    expect(exit).toHaveBeenCalledWith(0);
+  });
 });

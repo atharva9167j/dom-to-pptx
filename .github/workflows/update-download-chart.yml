@@ -1,0 +1,39 @@
+name: Update Download Trend Chart
+
+on:
+  schedule:
+    # Run every Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-chart:
+    name: Generate and commit download chart
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate download chart
+        run: node scripts/generate-download-chart.js
+
+      - name: Commit and push if chart updated
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if git status --porcelain assets/download-trend.svg | grep -q "assets/download-trend.svg"; then
+            git add assets/download-trend.svg
+            git commit -m "chore: update npm download trend chart [skip ci]"
+            git push
+          else
+            console.log "No changes in download trend chart."
+          fi

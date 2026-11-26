@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Text Stroke as Text Outline**: `getTextStyle` in `src/utils.js` maps CSS `-webkit-text-stroke` to the PptxGenJS `outline` text option, so stroked text exports with a native PowerPoint text outline (`<a:ln>`) instead of losing it. Width converts like `font-size` (px × 0.75 × scale); fully transparent strokes are skipped, and translucent stroke colors export opaque because PptxGenJS writes the outline color without alpha (#74).
+- **PPTX Template Support**: Export slides directly into an existing `.pptx` template file so slides inherit genuine PowerPoint slide master and layout backgrounds (logos, footers, brand themes) without taking rasterized screenshots. Adds `options.template`, `options.defaultBaseLayout`, `{ element, baseLayout }` target descriptors, and `getTemplateLayouts()` introspection helper (#67).
+- **Template Font Embedding**: Embedded fonts (both manual `options.fonts` and automatic `@font-face` detection) are fully merged into the template's OOXML `<p:embeddedFontLst>` alongside existing fonts with schema-ordered variant mapping and collision-free relationship IDs (#67).
+- **CLI Template and Layout Flags**: Added `--template <path>` and `--base-layout <name>` to `dom-to-pptx-exporter` and `dom-to-pptx export`, automatically adopting the template's declared slide dimensions and reading local template paths on the Node side (#67).
+- **Presentation Language & Spell-Check Configuration**: Added `options.lang` parameter and CLI flag `--lang <code>` (e.g. `de-DE`, `fr-FR`). Tags text runs and table cells with the designated language, rewrites `en-US` defaults on slide masters and notes, and cleans up redundant PptxGenJS `altLang="en-US"` attributes (#73).
+- **Text Stroke as Text Outline**: `getTextStyle` in `src/utils.js` maps CSS `-webkit-text-stroke` to the PptxGenJS `outline` text option, so stroked text exports with a native PowerPoint text outline (`<a:ln>`) instead of losing it. Width converts like `font-size` (px × 0.75 × scale); fully transparent strokes are skipped, and translucent stroke colors export opaque because PptxGenJS writes the outline color without alpha (#74, #75).
+- **Skills Package & npm Workspaces**: Structured the repository as npm workspaces with standalone package `packages/dom-to-pptx-skills`, providing an interactive agent configuration installer for Claude Code, Gemini CLI, Cursor, and Windsurf.
+
+### Fixed
+
+- **Image Wrapper Background Preservation**: Ensured solid background colors on wrapper elements whose child `<img>` fills them are preserved in the PPTX output rather than dropped, preventing white backdrop bleed when the image has alpha transparency (#76).
 
 ## [2.1.2] - 2026-09-14
 
@@ -60,21 +69,18 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-* **Incorrect CLI command in documentation**: The documented command `npx dom-to-pptx-export` does not exist. The root `package.json` only defines the following binaries:
-
-  * `dom-to-pptx`
-  * `dom-to-pptx-exporter`
-  * `dom-to-pptx-skills`
+- **Incorrect CLI command in documentation**: The documented command `npx dom-to-pptx-export` does not exist. The root `package.json` only defines the following binaries:
+  - `dom-to-pptx`
+  - `dom-to-pptx-exporter`
+  - `dom-to-pptx-skills`
 
   Updated the following files:
-
-  * `skills/dom-to-pptx-skill/SKILL.md` (lines 75, 79)
-  * `skills/dom-to-pptx-skill/reference/TEMPLATE.md` (lines 394, 397)
-  * `skills/dom-to-pptx-skill/reference/SAFE_HTML_TEMPLATE.md` (lines 219, 222)
+  - `skills/dom-to-pptx-skill/SKILL.md` (lines 75, 79)
+  - `skills/dom-to-pptx-skill/reference/TEMPLATE.md` (lines 394, 397)
+  - `skills/dom-to-pptx-skill/reference/SAFE_HTML_TEMPLATE.md` (lines 219, 222)
 
   Replaced `npx dom-to-pptx-export` with:
-
-  * `npx dom-to-pptx-exporter` (package binary)
+  - `npx dom-to-pptx-exporter` (package binary)
 
   aligning the documentation with the usage shown in `README.md`, `USAGE.md`, and `packages/dom-to-pptx-exporter/README.md`.
 
@@ -82,11 +88,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-* **Workspace monorepo layout**: Reorganized the repository as a `pnpm` workspace.
-* **Standalone npm packages**: Added the `dom-to-pptx-skills` and `dom-to-pptx-exporter` packages, enabling direct execution from the npm registry via:
-
-  * `npx dom-to-pptx-skills`
-  * `npx dom-to-pptx-exporter`
+- **Workspace monorepo layout**: Reorganized the repository as a `pnpm` workspace.
+- **Standalone npm packages**: Added the `dom-to-pptx-skills` and `dom-to-pptx-exporter` packages, enabling direct execution from the npm registry via:
+  - `npx dom-to-pptx-skills`
+  - `npx dom-to-pptx-exporter`
 
 ### Fixed
 
@@ -114,6 +119,7 @@ All notable changes to this project will be documented in this file.
 - **Formatting, Linting & Style Audit**: Added `.editorconfig`, `.vscode/settings.json`, and `.markdownlint.json`. Enhanced ESLint config to use `@eslint/markdown` for linting code blocks inside `.md` documentation.
 
 ### Fixed
+
 - **`white-space: pre` / `pre-wrap` / `pre-line` newline preservation**: Fixed a bug where newlines/tabs inside `<pre>` or custom preformatted containers collapsed into a space. Indentation, tabs, and line breaks are now accurately preserved.
 - **PowerPoint XML Corruption & Warnings**: Resolved slide repair errors in PowerPoint by wrapping modern transitions in `AlternateContent` compatibility fallbacks, registering namespaces correctly, and enforcing bullet property exclusivity.
 

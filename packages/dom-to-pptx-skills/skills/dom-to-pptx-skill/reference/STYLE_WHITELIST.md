@@ -40,6 +40,7 @@ The validator in [VALIDATION.md](VALIDATION.md) enforces this list.
 | Feature | Status | Notes |
 | --- | :---: | --- |
 | `background-color: #hex` / `rgb()` / `rgba()` / named | ✅ | All color formats supported. |
+| Solid background on `<img>` wrapper | ✅ | Preserved behind full-size images so transparent/alpha PNGs retain expected background tint. |
 | `background: linear-gradient(<angle>, stop, stop, …)` | ✅ | Any angle (`45deg`, `to right`, `135deg`), multiple stops with transparency. |
 | `background: radial-gradient(...)` | ⚠️ | Partial — simple cases render, complex shapes fall back. Prefer linear. |
 | `background: conic-gradient(...)` | ❌ | Unsupported. |
@@ -80,6 +81,7 @@ The validator in [VALIDATION.md](VALIDATION.md) enforces this list.
 | `font-style: italic` | ✅ |  |
 | `line-height` (unitless or px) | ✅ |  |
 | `letter-spacing` | ✅ | Maps to PPTX `charSpacing` (v1.1.6+). |
+| `-webkit-text-stroke: <width> <color>` | ✅ | Maps to native PowerPoint text outline (`<a:ln>`). Translucent colors export opaque. |
 | `text-transform: uppercase / lowercase / capitalize` | ✅ | Supported in v1.1.6+. |
 | `text-align: left / right / center / justify` | ✅ |  |
 | `white-space: nowrap / pre / pre-wrap` | ✅ |  |

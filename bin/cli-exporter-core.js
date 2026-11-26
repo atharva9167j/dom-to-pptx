@@ -16,6 +16,7 @@
  *   --browser-height, --bh <num>   Headless browser viewport height in pixels [default: height * 192]
  *   --template     <path>          Base the export on an existing .pptx (real master/layout background)
  *   --base-layout  <name>          Layout name from --template applied to every exported slide
+ *   --lang         <code>          Language code for text and spell-check (e.g. de-DE, en-US)
  *   --help, -h                     Show this help message
  */
 
@@ -70,6 +71,7 @@ function printHelp() {
     ['--no-pseudo', 'Disable exporting CSS pseudo-elements (::before/::after)'],
     ['--template     <path>', 'Base the export on an existing .pptx (real master/layout background)'],
     ['--base-layout  <name>', 'Layout name from --template applied to every exported slide'],
+    ['--lang         <code>', 'Language code for text and spell-check (e.g. de-DE, en-US)'],
     ['--help,    -h', 'Show this help message'],
   ];
   opts.forEach(([flag, desc]) => {
@@ -116,6 +118,8 @@ function parseArgs(argv) {
       args.template = argv[++i];
     } else if (a === '--base-layout' && argv[i + 1]) {
       args.baseLayout = argv[++i];
+    } else if (a === '--lang' && argv[i + 1]) {
+      args.lang = argv[++i];
     } else if (!a.startsWith('-')) {
       args._.push(a);
     }
@@ -179,7 +183,14 @@ function resolveSlideSizeOptions(args) {
  * the size came from `--template`) can never "mismatch", because nothing
  * specific was requested for it.
  */
-function computeSizeMismatch({ explicitWidth, explicitHeight, slideWidth, slideHeight, effectiveWidth, effectiveHeight }) {
+function computeSizeMismatch({
+  explicitWidth,
+  explicitHeight,
+  slideWidth,
+  slideHeight,
+  effectiveWidth,
+  effectiveHeight,
+}) {
   const widthMismatch = explicitWidth && Math.abs(effectiveWidth - slideWidth) > 0.01;
   const heightMismatch = explicitHeight && Math.abs(effectiveHeight - slideHeight) > 0.01;
   return { widthMismatch, heightMismatch, hasMismatch: widthMismatch || heightMismatch };
@@ -285,8 +296,16 @@ async function runExporter(argv, deps = {}) {
   const outputPath = args.output ? path.resolve(args.output) : defaultOutput;
 
   // Resolve slide and browser dimensions using script scale (PPI = 192)
-  let { slideWidth, slideHeight, explicitWidth, explicitHeight, browserWidth, browserHeight, sizeFromTemplate, forceExplicitSize } =
-    resolveSlideSizeOptions(args);
+  let {
+    slideWidth,
+    slideHeight,
+    explicitWidth,
+    explicitHeight,
+    browserWidth,
+    browserHeight,
+    sizeFromTemplate,
+    forceExplicitSize,
+  } = resolveSlideSizeOptions(args);
 
   // When the final size will come entirely from --template, resolve its
   // real declared size up front so the viewport (and the pre-export
@@ -311,6 +330,7 @@ async function runExporter(argv, deps = {}) {
       ...(args.title && { title: args.title }),
       ...(args.author && { author: args.author }),
       ...(args.template && { template: args.template }),
+      ...(args.lang && { lang: args.lang }),
       // The CLI selects slides by CSS selector, with no way to assign a
       // different layout per slide — every exported slide uses this same
       // layout (or the template's own default layout if omitted). Per-slide
@@ -458,6 +478,5 @@ async function runExporter(argv, deps = {}) {
     exit(1);
   }
 }
-
 
 export { runExporter, resolveSlideSizeOptions, computeSizeMismatch, resolveTemplateSldSzInches, parseArgs };

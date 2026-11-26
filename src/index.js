@@ -47,13 +47,21 @@ const PX_TO_INCH = 1 / PPI;
 
 /**
  * Main export function.
- * @param {HTMLElement | string | Array<HTMLElement | string>} target
- * @param {Object} options
- * @param {string} [options.fileName]
+ * @param {HTMLElement | string | Array<HTMLElement | string | {element: HTMLElement | string, baseLayout?: string}>} target -
+ *   DOM element, selector, or array of them. An entry may also be a `{element, baseLayout}` descriptor
+ *   to pick which template layout that specific slide is based on (requires `options.template`).
+ * @param {Object} [options={}]
+ * @param {string} [options.fileName='export.pptx']
+ * @param {boolean} [options.autoEmbedFonts=true] - Automatically detect and embed web fonts
+ * @param {Array<{name: string, url: string}>} [options.fonts=[]] - Manual array of font objects to embed
  * @param {boolean} [options.skipDownload=false] - If true, prevents automatic download
  * @param {Object} [options.listConfig] - Config for bullets
  * @param {boolean} [options.svgAsVector=false] - If true, keeps SVG as vector (for Convert to Shape in PowerPoint)
- * @param {string} [options.lang='en-US'] - Language of the text (e.g. 'de-DE'), used for spell-check
+ * @param {string} [options.layout='LAYOUT_16x9'] - Slide layout name (e.g. LAYOUT_16x9, LAYOUT_4x3, LAYOUT_WIDE)
+ * @param {number} [options.width=10] - Custom slide width in inches (requires options.height)
+ * @param {number} [options.height=5.625] - Custom slide height in inches (requires options.width)
+ * @param {boolean} [options.includePseudoElements=true] - If true, captures CSS pseudo-elements (::before/::after)
+ * @param {string} [options.lang] - Language code for text and spell-check (e.g. 'de-DE'). Unset by default; when specified, tags text runs, table cells, masters, and notes
  * @param {boolean} [options.skipNormalize=false] - If true, skips re-zipping with DEFLATE
  *   and stripping dangling [Content_Types].xml Overrides. Leave it false unless you are
  *   debugging the raw PptxGenJS output, otherwise Microsoft PowerPoint may reject the file.
@@ -66,9 +74,6 @@ const PX_TO_INCH = 1 / PPI;
  * @param {string} [options.defaultBaseLayout] - Layout name used for slides that don't
  *   specify their own `baseLayout`. Falls back to the template's first declared layout
  *   if omitted.
- * @param {HTMLElement | string | Array<HTMLElement | string | {element: HTMLElement | string, baseLayout?: string}>} target -
- *   In addition to elements/selectors, an entry may be a `{element, baseLayout}` descriptor
- *   to pick which template layout that specific slide is based on (requires `options.template`).
  * @returns {Promise<Blob>} - Returns the generated PPTX Blob
  */
 export async function exportToPptx(target, options = {}) {
@@ -1503,13 +1508,12 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       // leaving the bullet anchored at the left margin while pushing text far to the right.
       const visualIndentPx = liRect.left - parentRect.left;
       const liPaddingLeft = parseFloat(liStyle.paddingLeft) || 0;
-      const extraIndentPx = Math.max(0, visualIndentPx - ulPaddingLeft) + (visualIndentPx <= ulPaddingLeft ? liPaddingLeft : 0);
+      const extraIndentPx =
+        Math.max(0, visualIndentPx - ulPaddingLeft) + (visualIndentPx <= ulPaddingLeft ? liPaddingLeft : 0);
 
       // A typical indentation level step in CSS is ~20px - 30px (e.g. 20px, 1.5rem, 2em).
       // We map extra horizontal indent into indentLevel: 0 (root), 1 (sub), up to 8 (PPTX limit).
-      const indentLevel = extraIndentPx > 10
-        ? Math.min(8, Math.max(1, Math.round(extraIndentPx / 20)))
-        : 0;
+      const indentLevel = extraIndentPx > 10 ? Math.min(8, Math.max(1, Math.round(extraIndentPx / 20))) : 0;
 
       if (bullet) {
         // Standard gap between bullet glyph and text (20pt scaled)
@@ -1894,7 +1898,7 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         padding[0] * 72, // top
         padding[1] * 72, // right
         padding[2] * 72, // bottom
-        padding[3] * 72  // left
+        padding[3] * 72 // left
       );
 
       textPayload = { text: textParts, align, valign, margin };
@@ -2007,14 +2011,7 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       );
       items.push(...borderItems);
     }
-  } else if (
-    bgColorObj.hex ||
-    hasUniformBorder ||
-    hasCompositeBorder ||
-    hasShadow ||
-    textPayload ||
-    customShapeName
-  ) {
+  } else if (bgColorObj.hex || hasUniformBorder || hasCompositeBorder || hasShadow || textPayload || customShapeName) {
     const finalAlpha = safeOpacity * bgColorObj.opacity;
     const transparency = (1 - finalAlpha) * 100;
     const useSolidFill = bgColorObj.hex || customShapeName;

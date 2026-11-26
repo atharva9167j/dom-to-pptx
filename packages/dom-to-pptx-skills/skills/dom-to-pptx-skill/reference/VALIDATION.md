@@ -38,6 +38,7 @@ Run through this when generating the HTML by hand. The runnable validator below 
 
 - [ ] All font-sizes on slide content resolve to px (not vw/vh).
 - [ ] Every custom font-family has a web-safe fallback (`Arial, sans-serif` etc).
+- [ ] For typographic outlines, use `-webkit-text-stroke: <width> <color>` (maps to native PowerPoint text outlines).
 
 ---
 

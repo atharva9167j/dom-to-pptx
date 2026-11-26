@@ -7,7 +7,13 @@
 [![](https://data.jsdelivr.com/v1/package/npm/dom-to-pptx/badge?style=rounded)](https://www.jsdelivr.com/package/npm/dom-to-pptx)
 [![license](https://img.shields.io/npm/l/dom-to-pptx.svg?style=flat-square)](https://github.com/atharva9167j/dom-to-pptx/blob/master/LICENSE)
 
-> Trusted by **230,000+ downloads every month** — and now with native motion support.
+[![NPM](https://nodei.co/npm/dom-to-pptx.png?downloads=true&downloadRank=true&stars=true)](https://nodei.co/npm/dom-to-pptx/)
+
+> Trusted by **230,000+ downloads every month** (over 2.6M+ annual downloads) — and now with native motion support.
+
+<p align="center">
+  <img src="./assets/download-trend.svg" alt="npm Download Trend" width="100%" />
+</p>
 
 > [!TIP]
 > **Quick Start for AI Agents (Claude Code, Gemini, Windsurf):**
@@ -126,7 +132,11 @@ npx dom-to-pptx-exporter slides.html --output presentation.pptx
 - `--inject`: Force-inject the local browser bundle (useful if the HTML doesn't bundle `dom-to-pptx`).
 - `--title <text>` / `--author <text>`: Add presentation title / author metadata.
 - `--width <num>` / `--height <num>`: Set custom slide dimensions in inches.
+- `--browser-width, --bw <num>` / `--browser-height, --bh <num>`: Set headless viewport dimensions in pixels.
 - `--no-pseudo`: Disable exporting CSS pseudo-elements (useful for preventing hover/icon state conflicts).
+- `--template <path>`: Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [`docs/template-support.md`](docs/template-support.md).
+- `--base-layout <name>`: Layout name from `--template` applied to every exported slide.
+- `--lang <code>`: Presentation and text language code (e.g. `de-DE`, `en-US`) for spell-check.
 
 ### 3. Agent Skills Installer CLI (`dom-to-pptx-skills`)
 
@@ -450,19 +460,21 @@ Returns: `Promise<Blob>` - Resolves with the generated PPTX file data (Blob).
 
 **Options Object:**
 
-| Key                 | Type                                                | Default                 | Description                                                                                                                                        |
-| :------------------ | :-------------------------------------------------- | :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fileName`          | `string`                                            | `"export.pptx"`         | The name of the downloaded file.                                                                                                                   |
-| `autoEmbedFonts`    | `boolean`                                           | `true`                  | Automatically detect and embed used fonts.                                                                                                         |
-| `fonts`             | `Array`                                             | `[]`                    | Manual array of font objects: `{ name, url }`.                                                                                                     |
-| `skipDownload`      | `boolean`                                           | `false`                 | If `true`, the file is not downloaded automatically. Use the returned `Blob` for custom handling (upload).                                         |
-| `svgAsVector`       | `boolean`                                           | `false`                 | If `true`, keeps SVG elements as vectors (not rasterized). Enables "Convert to Shape" in PowerPoint.                                               |
-| `layout`            | `string`                                            | `"LAYOUT_16x9"`         | Slide layout name (e.g., `LAYOUT_4x3`, `LAYOUT_16x10`, `LAYOUT_WIDE`).                                                                             |
-| `width`             | `number`                                            | `10`                    | Custom slide width in inches (requires `height` to be set).                                                                                        |
-| `height`            | `number`                                            | `5.625`                 | Custom slide height in inches (requires `width` to be set).                                                                                        |
-| `listConfig`        | `object`                                            | `undefined`             | Global overrides for list styles. Structure: `{ color: string, spacing: { before: number, after: number } }`.                                      |
-| `template`          | `string` \| `ArrayBuffer` \| `Uint8Array` \| `Blob` | `undefined`             | Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [Template Support](docs/template-support.md). |
-| `defaultBaseLayout` | `string`                                            | template's first layout | Layout name (from `template`) used for any slide that doesn't set its own `baseLayout`.                                                            |
+| Key                     | Type                                                | Default                 | Description                                                                                                                                        |
+| :---------------------- | :-------------------------------------------------- | :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fileName`              | `string`                                            | `"export.pptx"`         | The name of the downloaded file.                                                                                                                   |
+| `autoEmbedFonts`        | `boolean`                                           | `true`                  | Automatically detect and embed used fonts.                                                                                                         |
+| `fonts`                 | `Array`                                             | `[]`                    | Manual array of font objects: `{ name, url }`.                                                                                                     |
+| `skipDownload`          | `boolean`                                           | `false`                 | If `true`, the file is not downloaded automatically. Use the returned `Blob` for custom handling (upload).                                         |
+| `svgAsVector`           | `boolean`                                           | `false`                 | If `true`, keeps SVG elements as vectors (not rasterized). Enables "Convert to Shape" in PowerPoint.                                               |
+| `layout`                | `string`                                            | `"LAYOUT_16x9"`         | Slide layout name (e.g., `LAYOUT_4x3`, `LAYOUT_16x10`, `LAYOUT_WIDE`).                                                                             |
+| `width`                 | `number`                                            | `10`                    | Custom slide width in inches (requires `height` to be set).                                                                                        |
+| `height`                | `number`                                            | `5.625`                 | Custom slide height in inches (requires `width` to be set).                                                                                        |
+| `includePseudoElements` | `boolean`                                           | `true`                  | Capture CSS pseudo-elements (`::before`/`::after`). Set `false` to disable.                                                                        |
+| `listConfig`            | `object`                                            | `undefined`             | Global overrides for list styles. Structure: `{ color: string, spacing: { before: number, after: number } }`.                                      |
+| `lang`                  | `string`                                            | `undefined`             | Language code for text and spell-check (e.g., `"de-DE"`, `"en-US"`). Unset by default.                                                             |
+| `template`              | `string` \| `ArrayBuffer` \| `Uint8Array` \| `Blob` | `undefined`             | Base the export on an existing `.pptx` so slides inherit its real slideLayout/master background. See [Template Support](docs/template-support.md). |
+| `defaultBaseLayout`     | `string`                                            | template's first layout | Layout name (from `template`) used for any slide that doesn't set its own `baseLayout`.                                                            |
 
 > Note: animations and transitions are controlled entirely through CSS classes on your elements (see [Animated Slides & Transitions](#6-animated-slides--transitions-new-in-v200)), not through the `options` object.
 

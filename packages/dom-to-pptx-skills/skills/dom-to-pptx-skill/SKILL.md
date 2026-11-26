@@ -61,6 +61,7 @@ Execute the HTML. Follow these **Non-Negotiable Directives**:
    - **Fallback**: If you cannot generate an image, use Pexels, Unsplash, URL from internet as a temporary placeholder, but local images are preferred for high-fidelity exports.
    - Images must have `object-fit: cover`.
 6. **Speaker Notes Requirement**: You can optionally add comprehensive presenter speaker notes to each `.slide` container using the `data-pptx-notes` attribute (e.g. `<div class="slide" data-pptx-notes="Welcome executives. Key focus: Q3 revenue growth and operational expansion.">`). These automatically export to PowerPoint presenter notes.
+7. **Typographic Outlines**: You can use `-webkit-text-stroke: <width> <color>` for dramatic editorial headline outlines (e.g. `-webkit-text-stroke: 2px #fff`), which maps to native PowerPoint text outlines (`<a:ln>`).
 
 ### PHASE 5: Pre-Export Validation
 
@@ -72,17 +73,26 @@ Instead of requiring manual browser interactions or click buttons on the page, c
 
 1. **Determine Export Scope**:
    - **Multi-Slide Export**: To compile all elements representing slides in the presentation deck, pass the HTML file. It will automatically match all elements matching `.slide` (or your custom selector):
+
      ```bash
+     # Recommended unified router:
+     npx dom-to-pptx export presentation.html -o presentation.pptx
+
+     # Or via dedicated exporter CLI:
      npx dom-to-pptx-exporter presentation.html -o presentation.pptx
      ```
+
    - **Single-Slide Export**: To compile a single slide from the presentation (useful for drafts, testing specific layouts, or incremental builds), pass the slide element selector directly:
      ```bash
-     npx dom-to-pptx-exporter presentation.html -s "#slide-2" -o slide2-only.pptx
+     npx dom-to-pptx export presentation.html -s "#slide-2" -o slide2-only.pptx
      ```
-2. **Customize Layout Options**:
-   - You can pass custom size settings directly using CLI arguments (e.g., `--width 10 --height 5.625`) to override slide sizes.
-   - You can disable pseudo-element (`::before`/`::after`) compilation (e.g. to prevent hover state conflicts or icon collisions) by passing `--no-pseudo`.
-   - Set metadata title and author flags (e.g., `--title "Q3 Review" --author "Principal Visual Director"`).
+
+2. **Customize Layout & Brand Options**:
+   - **Template & Master Inheritance**: Base export on an existing corporate PowerPoint template via `--template <path>` and `--base-layout <name>`. Exported slides inherit real PowerPoint slide master backgrounds, themes, and logos.
+   - **Presentation Language**: Set presentation spell-checking language via `--lang <code>` (e.g. `--lang de-DE`, `--lang fr-FR`).
+   - **Custom Dimensions**: Override slide size with `--width 10 --height 5.625`, or configure viewport resolution with `--browser-width 1920 --browser-height 1080`.
+   - **Disable Pseudo-Elements**: Pass `--no-pseudo` if hover states or icon pseudo-elements collide.
+   - **Metadata**: Set metadata flags (e.g., `--title "Q3 Review" --author "Principal Visual Director"`).
 3. **Execution**: Run the command directly in your environment and provide the output file to the user. You do not need to instruct the user to click any buttons.
 
 </WORKFLOW>

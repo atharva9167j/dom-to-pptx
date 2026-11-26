@@ -6,13 +6,16 @@
   "main": "dist/dom-to-pptx.cjs",
   "module": "dist/dom-to-pptx.mjs",
   "browser": "dist/dom-to-pptx.bundle.js",
+  "types": "./index.d.ts",
   "exports": {
     ".": {
+      "types": "./index.d.ts",
       "import": "./dist/dom-to-pptx.mjs",
       "require": "./dist/dom-to-pptx.cjs",
       "default": "./dist/dom-to-pptx.cjs"
     },
     "./node": {
+      "types": "./node.d.ts",
       "import": "./dist/dom-to-pptx-node.mjs",
       "require": "./dist/dom-to-pptx-node.cjs",
       "default": "./dist/dom-to-pptx-node.cjs"
@@ -31,6 +34,9 @@
   "files": [
     "dist",
     "bin",
+    "index.d.ts",
+    "node.d.ts",
+    "packages/dom-to-pptx-skills/skills/dom-to-pptx-skill",
     "Readme.md",
     "CONTRIBUTORS.md",
     "CHANGELOG.md",
@@ -42,7 +48,17 @@
     "build": "npx rollup -c",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "publish:all": "pnpm publish -r --no-git-checks"
+    "publish:all": "pnpm publish -r --no-git-checks",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "repository": {
     "type": "git",
@@ -132,6 +148,26 @@
     {
       "name": "Christopher Slowe",
       "url": "https://github.com/KeyserSosa"
+    },
+    {
+      "name": "Mareks Gaļanskis",
+      "url": "https://github.com/pfmareks"
+    },
+    {
+      "name": "wondy-dev",
+      "url": "https://github.com/wondy-dev"
+    },
+    {
+      "name": "AlexGPT1975",
+      "url": "https://github.com/AlexGPT1975"
+    },
+    {
+      "name": "Lijo",
+      "url": "https://github.com/lijokad"
+    },
+    {
+      "name": "DysonLiu",
+      "url": "https://github.com/DysonLiu"
     }
   ],
   "license": "MIT",
@@ -150,7 +186,9 @@
     "eslint-plugin-prettier": "^5.5.4",
     "events": "^3.3.0",
     "globals": "^17.6.0",
+    "husky": "^9.1.7",
     "jsdom": "^28.0.0",
+    "lint-staged": "^17.6.2",
     "prettier": "^3.7.3",
     "process": "^0.11.10",
     "rollup": "^4.18.0",
