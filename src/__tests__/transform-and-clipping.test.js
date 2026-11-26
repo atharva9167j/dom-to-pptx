@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { getTransformProperties, getRotation, getClippingAncestor } from '../utils.js';
+import { getTransformProperties, getClippingAncestor } from '../utils.js';
 
-describe('getTransformProperties and getRotation', () => {
+describe('getTransformProperties', () => {
   it('handles null, empty, or "none"', () => {
     expect(getTransformProperties(null)).toEqual({ rotate: 0, flipH: false, flipV: false });
     expect(getTransformProperties('')).toEqual({ rotate: 0, flipH: false, flipV: false });
     expect(getTransformProperties('none')).toEqual({ rotate: 0, flipH: false, flipV: false });
-    expect(getRotation('none')).toBe(0);
   });
 
   it('decomposes standard rotation without reflection', () => {
@@ -34,9 +33,6 @@ describe('getTransformProperties and getRotation', () => {
     expect(props.rotate).toBe(8);
     expect(props.flipH).toBe(true);
     expect(props.flipV).toBe(false);
-
-    // Old getRotation would return ~188 or -172 deg because it omitted reflection
-    expect(getRotation(matrixStr)).toBe(8);
   });
 
   it('handles explicit inline function notation rotate(8.18deg) scale(-1, 1)', () => {

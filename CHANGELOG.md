@@ -12,9 +12,15 @@ All notable changes to this project will be documented in this file.
 - **Presentation Language & Spell-Check Configuration**: Added `options.lang` parameter and CLI flag `--lang <code>` (e.g. `de-DE`, `fr-FR`). Tags text runs and table cells with the designated language, rewrites `en-US` defaults on slide masters and notes, and cleans up redundant PptxGenJS `altLang="en-US"` attributes (#73).
 - **Text Stroke as Text Outline**: `getTextStyle` in `src/utils.js` maps CSS `-webkit-text-stroke` to the PptxGenJS `outline` text option, so stroked text exports with a native PowerPoint text outline (`<a:ln>`) instead of losing it. Width converts like `font-size` (px × 0.75 × scale); fully transparent strokes are skipped, and translucent stroke colors export opaque because PptxGenJS writes the outline color without alpha (#74, #75).
 - **Skills Package & npm Workspaces**: Structured the repository as npm workspaces with standalone package `packages/dom-to-pptx-skills`, providing an interactive agent configuration installer for Claude Code, Gemini CLI, Cursor, and Windsurf.
+- **Image Opacity & Native Picture Transparency**: Respects CSS `opacity` on `<img>` and `background-image: url(...)` elements by injecting OpenXML `<a:alphaModFix amt="..."/>` into `<p:pic><p:blipFill><a:blip>` (avoiding double-fading), exposing PowerPoint's native Picture Transparency slider.
+- **CSS Image Filters**: Applies computed `filter` expressions (e.g., `grayscale()`, `sepia()`, `contrast()`, `blur()`) during raster image processing via HTML5 Canvas `ctx.filter`.
+- **Strikethrough, Superscript & Subscript**: Added support for `text-decoration: line-through`, `<del>`, `<s>`, `<strike>`, `<sup>`, `<sub>`, and `vertical-align: super` / `sub` in `getTextStyle()` and `collectTextParts()`.
 
 ### Fixed
 
+- **Transform Reflection & Rotation Decomposition**: `getTransformProperties()` in `src/utils.js` decomposes CSS 2D transformation matrices to preserve `flipH` / `flipV` reflection flags alongside accurate rotation angles (e.g., `rotate(8.18deg) scale(-1, 1)`).
+- **Overflow Clipping & Native Picture Outlines**: Images extending outside `overflow: hidden` containers are cropped via `<a:srcRect>` when unrotated, and `<img>` borders export as native, editable `<a:ln>` picture outlines inside `<p:pic><p:spPr>`.
+- **Unified Inline Code Text Flow**: Semantic text containers (`<p>`, `<h1>`-`<h6>`, `<li>`, `<blockquote>`) containing inline `<code>`, `<kbd>`, or `<mark>` elements now preserve unified inline text flow with syntax highlight fills rather than splitting into disconnected shapes.
 - **Image Wrapper Background Preservation**: Ensured solid background colors on wrapper elements whose child `<img>` fills them are preserved in the PPTX output rather than dropped, preventing white backdrop bleed when the image has alpha transparency (#76).
 
 ## [2.1.2] - 2026-09-14

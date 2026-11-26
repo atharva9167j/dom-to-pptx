@@ -1,3 +1,4 @@
+/* global Buffer */
 // src/__tests__/template-support.test.js
 //
 // Tests for the optional `template` export mode: exporting DOM slides onto

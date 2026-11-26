@@ -609,6 +609,9 @@ async function processSlide(root, slide, pptx, globalOptions = {}) {
       const lineStr = `${item.borderLine.color || ''}_${item.borderLine.width || 1}_${item.borderLine.dashType || 'solid'}_${item.prstGeom || ''}`;
       transportVal += `__b_${lineStr}`;
     }
+    if (typeof item.opacity === 'number' && item.opacity < 1 && item.opacity >= 0) {
+      transportVal += `__a_${Math.round(item.opacity * 100000)}`;
+    }
     item.options.altText = transportVal;
     item.options.objectName = transportVal;
 
@@ -1040,7 +1043,7 @@ function getPseudoElementRect(hostRect, pseudoStyle) {
   return { left: x, top: y, width: w, height: h };
 }
 
-function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, domOrder, pptx, globalOptions = {}) {
+function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, domOrder, pptx) {
   const pseudoStyle = window.getComputedStyle(node, pseudoType);
   const content = pseudoStyle.content;
   const hasContent = content && content !== 'none' && content !== 'normal' && content !== '""';
@@ -1846,10 +1849,12 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       }
     }
 
+    const imgFilter = style.filter || 'none';
     const item = {
       type: 'image',
       zIndex: parentSortKey.concat([0, -1]),
       domOrder,
+      opacity: safeOpacity,
       options: {
         x: imgX,
         y: imgY,
@@ -1858,6 +1863,7 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         rotate: rotation,
         ...(flipH && { flipH: true }),
         ...(flipV && { flipV: true }),
+        ...(safeOpacity < 1 && { transparency: Math.round((1 - safeOpacity) * 100) }),
         ...(sizingCrop && { sizing: sizingCrop }),
         data: null,
       },
@@ -1914,7 +1920,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
     }
 
     const job = async () => {
-      const processed = await getProcessedImage(node.src, widthPx, heightPx, radii, objectFit, objectPosition);
+      const processed = await getProcessedImage(
+        node.src,
+        widthPx,
+        heightPx,
+        radii,
+        objectFit,
+        objectPosition,
+        1,
+        imgFilter
+      );
       if (processed) item.options.data = processed;
       else item.skip = true;
     };
@@ -2114,14 +2129,17 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         bl: parseFloat(style.borderBottomLeftRadius) || 0,
       };
 
+      const bgFilter = style.filter || 'none';
       const bgItem = {
         type: 'image',
+        opacity: safeOpacity,
         zIndex: parentSortKey.concat([-Infinity]),
         domOrder,
         options: {
           x,
           y,
           w,
+          ...(safeOpacity < 1 && { transparency: Math.round((1 - safeOpacity) * 100) }),
           h,
           rotate: rotation,
           ...(flipH && { flipH: true }),
@@ -2138,7 +2156,9 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
           heightPx,
           radii,
           style.backgroundSize || 'cover',
-          style.backgroundPosition || '50% 50%'
+          style.backgroundPosition || '50% 50%',
+          1,
+          bgFilter
         );
         if (processed) bgItem.options.data = processed;
         else bgItem.skip = true;
@@ -2726,7 +2746,7 @@ export function applyBrowserAnimations(parentElement, options = {}) {
       let style;
       try {
         style = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(el) : null;
-      } catch (e) {
+      } catch {
         style = null;
       }
       if (!style) {

@@ -382,6 +382,30 @@ function sortSpTree(doc) {
           }
         }
 
+        // Native picture transparency injection (<p:pic><p:blipFill><a:blip><a:alphaModFix amt="..."/>)
+        const alphaMatch = combined.match(/__a_(\d+)/);
+        if (alphaMatch && el.localName === 'pic') {
+          const alphaAmt = parseInt(alphaMatch[1], 10);
+          const blipFill = Array.from(el.childNodes).find((n) => n.nodeType === 1 && n.localName === 'blipFill');
+          if (blipFill) {
+            const blip = Array.from(blipFill.childNodes).find((n) => n.nodeType === 1 && n.localName === 'blip');
+            if (blip) {
+              const alphaMod = Array.from(blip.childNodes).find(
+                (n) => n.nodeType === 1 && n.localName === 'alphaModFix'
+              );
+              if (alphaMod) {
+                alphaMod.setAttribute('amt', String(alphaAmt));
+              } else {
+                const alphaXml = `<a:alphaModFix xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" amt="${alphaAmt}"/>`;
+                const alphaDoc = new DOMParser().parseFromString(alphaXml, 'text/xml');
+                const alphaNode = doc.importNode(alphaDoc.documentElement, true);
+                blip.appendChild(alphaNode);
+              }
+              mutated = true;
+            }
+          }
+        }
+
         const descrMatch = descr.match(/^__z_(\d+)__dom_(\d+)(.*)/);
         if (descrMatch) {
           zVal = parseInt(descrMatch[1], 10);
@@ -391,6 +415,7 @@ function sortSpTree(doc) {
           userText = userText
             .replace(/__type_[a-zA-Z0-9]+/g, '')
             .replace(/__b_[a-zA-Z0-9._]+/g, '')
+            .replace(/__a_\d+/g, '')
             .trim();
           if (userText) {
             cNvPr.setAttribute('descr', userText);
@@ -428,7 +453,11 @@ function sortSpTree(doc) {
           } else {
             // Old format: __z_N__dom_N [optional user text]
             let userText = (nameMatch[3] || '').trim();
-            userText = userText.replace(/__b_[a-zA-Z0-9._]+/g, '').trim();
+            userText = userText
+              .replace(/__type_[a-zA-Z0-9]+/g, '')
+              .replace(/__b_[a-zA-Z0-9._]+/g, '')
+              .replace(/__a_\d+/g, '')
+              .trim();
             shapeName = userText || `Shape ${domVal + 1}`;
           }
 

@@ -200,7 +200,6 @@ export function getClippingAncestor(node, slideRoot = null) {
   return null;
 }
 
-// Helper to save gradient text
 // Helper to save gradient text: extracts the first color from a gradient string
 export function getGradientFallbackColor(bgImage, style) {
   if (!bgImage || bgImage === 'none') return null;
@@ -668,7 +667,10 @@ export function getTextStyle(style, scale, includeMargins = true, inheritedOpaci
     fontSize: fontSizePx * 0.75 * scale,
     bold: parseInt(style.fontWeight) >= 600,
     italic: style.fontStyle === 'italic',
-    underline: style.textDecoration.includes('underline'),
+    underline: (style.textDecoration || '').includes('underline'),
+    ...(style.textDecoration && style.textDecoration.includes('line-through') ? { strike: true } : {}),
+    ...(style.verticalAlign === 'super' ? { superscript: true } : {}),
+    ...(style.verticalAlign === 'sub' ? { subscript: true } : {}),
     // Only add if we have a valid value
     ...(lineSpacing && { lineSpacing }),
     ...(paraSpaceBefore > 0 && { paraSpaceBefore }),
@@ -740,9 +742,23 @@ export function isTextContainer(node) {
     if (isFlexOrGridItem) return false;
 
     // 4. Standard Inline Tag Check
-    const isInlineTag = ['span', 'b', 'strong', 'em', 'i', 'a', 'small', 'mark', 'code'].includes(
-      el.tagName.toLowerCase()
-    );
+    const isInlineTag = [
+      'span',
+      'b',
+      'strong',
+      'em',
+      'i',
+      'a',
+      'small',
+      'mark',
+      'code',
+      'del',
+      's',
+      'strike',
+      'sup',
+      'sub',
+      'kbd',
+    ].includes(el.tagName.toLowerCase());
     const isInlineDisplay = display.includes('inline');
 
     if (!isInlineTag && !isInlineDisplay) return false;
@@ -879,10 +895,6 @@ export function getTransformProperties(transformStr) {
   if (Object.is(rotate, -0)) rotate = 0;
 
   return { rotate, flipH, flipV };
-}
-
-export function getRotation(transformStr) {
-  return getTransformProperties(transformStr).rotate;
 }
 
 export function getWritingModeVert(writingMode, textOrientation) {
@@ -1762,6 +1774,12 @@ export function collectTextParts(
           textTransform: wsStyle.textTransform,
         });
         if (segs.length) {
+          if (node.nodeType === 1) {
+            const tag = (node.tagName || '').toLowerCase();
+            if (tag === 'del' || tag === 's' || tag === 'strike') baseOpts.strike = true;
+            if (tag === 'sup') baseOpts.superscript = true;
+            if (tag === 'sub') baseOpts.subscript = true;
+          }
           const baseOpts = getTextStyle(wsStyle, scale, !isRoot, inheritedOpacity);
           if (hyperlink) baseOpts.hyperlink = hyperlink;
           if (baseOpts.charSpacing !== undefined && baseOpts.fontFace) {
@@ -1803,6 +1821,13 @@ export function collectTextParts(
         else if (transform === 'capitalize') val = val.replace(/\b\w/g, (c) => c.toUpperCase());
 
         const textOpts = getTextStyle(styleToUse, scale, !isRoot, inheritedOpacity);
+        if (node.nodeType === 1) {
+          const tag = (node.tagName || '').toLowerCase();
+          if (tag === 'del' || tag === 's' || tag === 'strike') textOpts.strike = true;
+          if (tag === 'sup') textOpts.superscript = true;
+          if (tag === 'sub') textOpts.subscript = true;
+        }
+
         if (hyperlink) textOpts.hyperlink = hyperlink;
 
         // Apply __spc_ suffix if charSpacing is defined

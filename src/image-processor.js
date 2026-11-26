@@ -1,6 +1,15 @@
 // src/image-processor.js
 
-export async function getProcessedImage(src, targetW, targetH, radius, objectFit = 'fill', objectPosition = '50% 50%') {
+export async function getProcessedImage(
+  src,
+  targetW,
+  targetH,
+  radius,
+  objectFit = 'fill',
+  objectPosition = '50% 50%',
+  opacity = 1,
+  filter = 'none'
+) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
@@ -99,6 +108,17 @@ export async function getProcessedImage(src, targetW, targetH, radius, objectFit
 
       const renderX = (targetW - renderW) * posX;
       const renderY = (targetH - renderH) * posY;
+
+      if (filter && filter !== 'none') {
+        try {
+          ctx.filter = filter;
+        } catch {
+          // Ignore invalid filter strings in environments where ctx.filter is unsupported
+        }
+      }
+      if (typeof opacity === 'number' && !isNaN(opacity) && opacity >= 0 && opacity <= 1) {
+        ctx.globalAlpha = opacity;
+      }
 
       ctx.drawImage(img, renderX, renderY, renderW, renderH);
 

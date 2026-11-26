@@ -264,7 +264,7 @@ function getAttributeDefault(attrName, tag) {
 export function getTransitionXml(transitionData) {
   if (!transitionData) return '';
 
-  const { name, dir, orient, pattern, spokes, dur } = transitionData;
+  const { name, dur } = transitionData;
   const def = TRANSITION_DEF[name];
   if (!def) return '';
 

@@ -1,3 +1,4 @@
+/* global Buffer */
 // src/__tests__/template-font-embedding.test.js
 //
 // Tests for combining `template` with embedded fonts: exported slides must

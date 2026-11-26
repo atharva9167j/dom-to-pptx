@@ -698,7 +698,7 @@ describe('applyBrowserAnimations', () => {
       style: {},
       childNodes: [textNode],
       children: [],
-      replaceChild: (newFragment, oldNode) => {
+      replaceChild: (newFragment) => {
         child.replacedNodes = Array.from(newFragment.childNodes);
       },
     };
@@ -812,7 +812,7 @@ describe('applyBrowserAnimations', () => {
       style: {},
       childNodes: [textNode],
       children: [],
-      replaceChild: (newFragment, oldNode) => {
+      replaceChild: (newFragment) => {
         child1.replacedNodes = Array.from(newFragment.childNodes);
       },
     };
