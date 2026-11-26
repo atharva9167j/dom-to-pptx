@@ -621,6 +621,12 @@ export function getTextStyle(style, scale, includeMargins = true, inheritedOpaci
 
   const transparency = Math.round((1 - opacity) * 100);
 
+  // --- Text Stroke ---
+  // Map -webkit-text-stroke to a PPTX text outline. Like Chromium, PowerPoint centers it on the glyph edges.
+  // PptxGenJS writes the outline color without alpha, so fully transparent strokes are skipped.
+  const strokeWidth = parseFloat(style.webkitTextStrokeWidth);
+  const strokeColor = strokeWidth > 0 ? parseColor(style.webkitTextStrokeColor, style) : null;
+
   return {
     color: colorObj.hex || '000000',
     ...(transparency > 0 && { transparency }),
@@ -640,6 +646,10 @@ export function getTextStyle(style, scale, includeMargins = true, inheritedOpaci
     // Mapping letter-spacing to charSpacing
     ...(style.letterSpacing && style.letterSpacing !== 'normal'
       ? { charSpacing: parseFloat(style.letterSpacing) * 0.75 * scale }
+      : {}),
+    // Mapping -webkit-text-stroke to outline (size in pt)
+    ...(strokeColor?.hex && strokeColor.opacity > 0
+      ? { outline: { size: strokeWidth * 0.75 * scale, color: strokeColor.hex } }
       : {}),
   };
 }

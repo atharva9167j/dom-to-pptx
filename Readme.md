@@ -62,6 +62,7 @@ Most HTML-to-PPTX libraries fail when faced with modern web design. They break o
 - **Auto-Scaling Engine:** Build your slide in HTML at **1920x1080** (or any aspect ratio). The library automatically calculates the scaling factor to fit it perfectly into a standard 16:9 PowerPoint slide.
 - **Rich Text Blocks:** Handles mixed-style text (e.g., **bold** spans inside a normal paragraph).
 - **Text Transformations:** Supports CSS `text-transform: uppercase/lowercase` and `letter-spacing`.
+- **Text Outlines:** Translates CSS `-webkit-text-stroke` into native PowerPoint text outlines.
 
 ### ⚡ Technical Capabilities
 
