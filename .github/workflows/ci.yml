@@ -40,11 +40,11 @@ jobs:
       - name: Check code formatting & lint
         run: pnpm run lint
 
-      - name: Run test suite
-        run: pnpm run test
-
       - name: Build bundles
         run: pnpm run build
+
+      - name: Run test suite
+        run: pnpm run test
 
       - name: Validate npm package tarball contents
         run: npm pack --dry-run
