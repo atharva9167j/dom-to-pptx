@@ -105,7 +105,7 @@ export function extractTableData(node, scale) {
         padding[0] * 72 + vSpacePt / 2, // top
         padding[1] * 72 + hSpacePt / 2, // right
         padding[2] * 72 + vSpacePt / 2, // bottom
-        padding[3] * 72 + hSpacePt / 2  // left
+        padding[3] * 72 + hSpacePt / 2 // left
       );
 
       // E. Borders
@@ -164,6 +164,40 @@ export function isClippedByParent(node) {
     parent = parent.parentElement;
   }
   return false;
+}
+
+/**
+ * Finds the nearest clipping ancestor for a given DOM node.
+ * An ancestor clips if its overflow is hidden, clip, or auto/scroll.
+ * Stops search at slideRoot if provided.
+ * @param {Node} node
+ * @param {HTMLElement} [slideRoot]
+ * @returns {HTMLElement | null}
+ */
+export function getClippingAncestor(node, slideRoot = null) {
+  let parent = node?.parentElement;
+  while (parent && parent !== document.body) {
+    const style = window.getComputedStyle(parent);
+    const overflow = style.overflow;
+    const overflowX = style.overflowX;
+    const overflowY = style.overflowY;
+    const isClip =
+      overflow === 'hidden' ||
+      overflow === 'clip' ||
+      overflowX === 'hidden' ||
+      overflowX === 'clip' ||
+      overflowY === 'hidden' ||
+      overflowY === 'clip';
+
+    if (isClip) {
+      return parent;
+    }
+    if (slideRoot && parent === slideRoot) {
+      break;
+    }
+    parent = parent.parentElement;
+  }
+  return null;
 }
 
 // Helper to save gradient text
@@ -706,15 +740,29 @@ export function isTextContainer(node) {
     if (isFlexOrGridItem) return false;
 
     // 4. Standard Inline Tag Check
-    const isInlineTag = ['span', 'b', 'strong', 'em', 'i', 'a', 'small', 'mark'].includes(el.tagName.toLowerCase());
+    const isInlineTag = ['span', 'b', 'strong', 'em', 'i', 'a', 'small', 'mark', 'code'].includes(
+      el.tagName.toLowerCase()
+    );
     const isInlineDisplay = display.includes('inline');
 
     if (!isInlineTag && !isInlineDisplay) return false;
 
     // 5. Structural Styling Check
-    // If a child has a visible border or rounded corners, it is an independent styled shape
-    // (such as a badge, pill, or button) that cannot be represented by a flat text run
-    // because PowerPoint DrawingML text runs do not support borders or rounded corners.
+    // If a child has a visible border or rounded corners, check whether it is inside a text block
+    // where its parent container has direct text, or if it is semantic inline text (like <code>, <kbd>)
+    // or inside a semantic container (<p>, <h1-h6>, <li>, <blockquote>).
+    // Keeping it inside the text container preserves natural inline text flow.
+    // However, standalone badges or pills (whose parent has no direct text and is not semantic text)
+    // remain independent styled shapes.
+    const hasDirectSiblingText =
+      el.parentElement &&
+      Array.from(el.parentElement.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim().length > 0);
+
+    const isCodeOrKbd = ['code', 'kbd', 'mark'].includes(tag);
+    const isSemanticParent = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li'].includes(
+      (node.tagName || '').toLowerCase()
+    );
+
     const borderRadius =
       parseFloat(style.borderRadius) ||
       parseFloat(style.borderTopLeftRadius) ||
@@ -725,7 +773,7 @@ export function isTextContainer(node) {
     const hasBorderRadius = borderRadius > 0;
     const hasBorder = parseFloat(style.borderWidth) > 0 && parseColor(style.borderColor, style).opacity > 0;
 
-    if (hasBorder || hasBorderRadius) {
+    if ((hasBorder || hasBorderRadius) && !hasDirectSiblingText && !isCodeOrKbd && !isSemanticParent) {
       return false;
     }
 
@@ -756,13 +804,85 @@ export function isTextContainerCached(node, cache) {
   return cache.get(node);
 }
 
+export function getTransformProperties(transformStr) {
+  if (!transformStr || transformStr === 'none') {
+    return { rotate: 0, flipH: false, flipV: false };
+  }
+
+  // 1. CSS Matrix / Matrix3D format: matrix(a, b, c, d, e, f)
+  if (transformStr.includes('matrix')) {
+    const raw = transformStr.substring(transformStr.indexOf('(') + 1, transformStr.lastIndexOf(')'));
+    const vals = raw.split(',').map((s) => parseFloat(s.trim()));
+    if (vals.length >= 4) {
+      let a = vals[0];
+      let b = vals[1];
+      const c = vals[2];
+      const d = vals[3];
+
+      // 2D Affine determinant: ad - bc
+      const det = a * d - b * c;
+      let flipH = false;
+      let flipV = false;
+
+      // Negative determinant indicates reflection
+      if (det < 0) {
+        flipH = true;
+        // Un-reflect horizontally to recover rotation angle: M * [ -1 0; 0 1 ]
+        a = -a;
+        b = -b;
+      }
+
+      let angle = Math.round(Math.atan2(b, a) * (180 / Math.PI));
+      if (angle < 0) angle += 360;
+      if (angle === 360 || Object.is(angle, -0)) angle = 0;
+
+      return { rotate: angle, flipH, flipV };
+    }
+    return { rotate: 0, flipH: false, flipV: false };
+  }
+
+  // 2. Explicit CSS transform functions (e.g. inline style "rotate(8.18deg) scale(-1, 1)")
+  let rotate = 0;
+  let flipH = false;
+  let flipV = false;
+
+  const rotateMatch = transformStr.match(/rotate\(([^)]+)\)/);
+  if (rotateMatch) {
+    const val = rotateMatch[1].trim();
+    if (val.endsWith('rad')) {
+      rotate = Math.round(parseFloat(val) * (180 / Math.PI));
+    } else if (val.endsWith('turn')) {
+      rotate = Math.round(parseFloat(val) * 360);
+    } else {
+      rotate = Math.round(parseFloat(val));
+    }
+  }
+
+  const scaleMatch = transformStr.match(/scale(?:X|Y)?\(([^)]+)\)/);
+  if (scaleMatch) {
+    const vals = scaleMatch[1].split(',').map((s) => parseFloat(s.trim()));
+    if (vals.length === 1) {
+      if (scaleMatch[0].startsWith('scaleX') && vals[0] < 0) flipH = true;
+      else if (scaleMatch[0].startsWith('scaleY') && vals[0] < 0) flipV = true;
+      else if (vals[0] < 0) {
+        flipH = true;
+        flipV = true;
+      }
+    } else if (vals.length >= 2) {
+      if (vals[0] < 0) flipH = true;
+      if (vals[1] < 0) flipV = true;
+    }
+  }
+
+  if (rotate < 0) rotate = (rotate % 360) + 360;
+  if (rotate >= 360) rotate = rotate % 360;
+  if (Object.is(rotate, -0)) rotate = 0;
+
+  return { rotate, flipH, flipV };
+}
+
 export function getRotation(transformStr) {
-  if (!transformStr || transformStr === 'none') return 0;
-  const values = transformStr.split('(')[1].split(')')[0].split(',');
-  if (values.length < 4) return 0;
-  const a = parseFloat(values[0]);
-  const b = parseFloat(values[1]);
-  return Math.round(Math.atan2(b, a) * (180 / Math.PI));
+  return getTransformProperties(transformStr).rotate;
 }
 
 export function getWritingModeVert(writingMode, textOrientation) {
@@ -1488,7 +1608,9 @@ export async function getAutoDetectedFonts(usedFamilies) {
  * and so the classification is unit-testable.
  */
 export function classifyFontVariant(weight, style) {
-  const wRaw = String(weight || '400').toLowerCase().trim();
+  const wRaw = String(weight || '400')
+    .toLowerCase()
+    .trim();
   let w = parseInt(wRaw, 10);
   if (isNaN(w)) {
     if (wRaw === 'bold' || wRaw === 'bolder') w = 700;

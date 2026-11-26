@@ -18,7 +18,8 @@ import {
   createShapeMargin,
   getVisibleShadow,
   generateGradientSVG,
-  getRotation,
+  getTransformProperties,
+  getClippingAncestor,
   getWritingModeVert,
   mapVertToTextDirection,
   svgToPng,
@@ -603,7 +604,11 @@ async function processSlide(root, slide, pptx, globalOptions = {}) {
   const { lang } = globalOptions;
   for (let i = 0; i < finalQueue.length; i++) {
     const item = finalQueue[i];
-    const transportVal = `__z_${i}__dom_${item.domOrder}__type_${item.type}`;
+    let transportVal = `__z_${i}__dom_${item.domOrder}__type_${item.type}`;
+    if (item.borderLine) {
+      const lineStr = `${item.borderLine.color || ''}_${item.borderLine.width || 1}_${item.borderLine.dashType || 'solid'}_${item.prstGeom || ''}`;
+      transportVal += `__b_${lineStr}`;
+    }
     item.options.altText = transportVal;
     item.options.objectName = transportVal;
 
@@ -1080,7 +1085,10 @@ function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, do
   const x = config.offX + (rect.left - config.rootX) * PX_TO_INCH * scale;
   const y = config.offY + (rect.top - config.rootY) * PX_TO_INCH * scale;
 
-  const rotation = getRotation(pseudoStyle.transform);
+  const rotationProps = getTransformProperties(pseudoStyle.transform);
+  const rotation = rotationProps.rotate;
+  const flipH = rotationProps.flipH;
+  const flipV = rotationProps.flipV;
 
   // 1. Handle CSS Border Triangle
   if (isTriangle) {
@@ -1098,6 +1106,8 @@ function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, do
             w,
             h,
             rotate: rotation,
+            ...(flipH && { flipH: true }),
+            ...(flipV && { flipV: true }),
           },
         },
         job: null,
@@ -1129,6 +1139,8 @@ function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, do
             w,
             h,
             rotate: rotation,
+            ...(flipH && { flipH: true }),
+            ...(flipV && { flipV: true }),
           },
         },
         job: null,
@@ -1218,7 +1230,16 @@ function preparePseudoElementItem(node, pseudoType, hostRect, config, zIndex, do
     type: 'image',
     zIndex,
     domOrder,
-    options: { x, y, w, h, rotate: rotation, data: null },
+    options: {
+      x,
+      y,
+      w,
+      h,
+      rotate: rotation,
+      ...(flipH && { flipH: true }),
+      ...(flipV && { flipV: true }),
+      data: null,
+    },
   };
 
   const canvasJob = async () => {
@@ -1345,7 +1366,10 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
   if (rect.width < 0.5 || rect.height < 0.5) return null;
 
   const parentSortKey = effectiveZIndex;
-  const rotation = getRotation(style.transform);
+  const transformProps = getTransformProperties(style.transform);
+  const rotation = transformProps.rotate;
+  const flipH = transformProps.flipH;
+  const flipV = transformProps.flipV;
   const writingModeVert = getWritingModeVert(style.writingMode, style.textOrientation);
   const elementOpacity = parseFloat(style.opacity);
   const localOpacity = isNaN(elementOpacity) ? 1 : elementOpacity;
@@ -1665,7 +1689,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       type: 'image',
       zIndex: parentSortKey.concat([0, -1]),
       domOrder,
-      options: { x, y, w, h, rotate: rotation, data: null },
+      options: {
+        x,
+        y,
+        w,
+        h,
+        rotate: rotation,
+        ...(flipH && { flipH: true }),
+        ...(flipV && { flipV: true }),
+        data: null,
+      },
     };
 
     const job = async () => {
@@ -1691,7 +1724,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       type: 'image',
       zIndex: parentSortKey.concat([0, -1]),
       domOrder,
-      options: { data: null, x, y, w, h, rotate: rotation },
+      options: {
+        data: null,
+        x,
+        y,
+        w,
+        h,
+        rotate: rotation,
+        ...(flipH && { flipH: true }),
+        ...(flipV && { flipV: true }),
+      },
     };
 
     const job = async () => {
@@ -1734,12 +1776,142 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
     const objectFit = style.objectFit || 'fill';
     const objectPosition = style.objectPosition || '50% 50%';
 
+    // Detect if this image is clipped by an ancestor with overflow: hidden or by the slide root
+    let imgX = x;
+    let imgY = y;
+    let imgW = w;
+    let imgH = h;
+    let sizingCrop = null;
+
+    // Notice: For rotated elements, PowerPoint DrawingML evaluates <a:srcRect>
+    // in unrotated image coordinate space, whereas PowerPoint's bounding box
+    // scales the rendered texture to the <a:xfrm> box. Sizing crop is only applied
+    // when rotation is zero. When rotation != 0, negative offsets position the
+    // rotated shape naturally without texture distortion.
+    if (rotation === 0) {
+      const clippingAncestor = getClippingAncestor(node, config.root);
+      const clipElem = clippingAncestor || config.root;
+      if (clipElem) {
+        const clipStyle = window.getComputedStyle(clipElem);
+        const isClip =
+          clipElem === config.root ||
+          clipStyle.overflow === 'hidden' ||
+          clipStyle.overflow === 'clip' ||
+          clipStyle.overflowX === 'hidden' ||
+          clipStyle.overflowX === 'clip' ||
+          clipStyle.overflowY === 'hidden' ||
+          clipStyle.overflowY === 'clip';
+
+        if (isClip) {
+          const clipRect = clipElem.getBoundingClientRect();
+          const cLeft = config.offX + (clipRect.left - config.rootX) * PX_TO_INCH * config.scale;
+          const cTop = config.offY + (clipRect.top - config.rootY) * PX_TO_INCH * config.scale;
+          const cW = clipRect.width * PX_TO_INCH * config.scale;
+          const cH = clipRect.height * PX_TO_INCH * config.scale;
+          const cRight = cLeft + cW;
+          const cBottom = cTop + cH;
+
+          const eLeft = x;
+          const eTop = y;
+          const eRight = x + w;
+          const eBottom = y + h;
+
+          // Check if image overflows the clipping container
+          const intLeft = Math.max(cLeft, eLeft);
+          const intTop = Math.max(cTop, eTop);
+          const intRight = Math.min(cRight, eRight);
+          const intBottom = Math.min(cBottom, eBottom);
+
+          const visW = intRight - intLeft;
+          const visH = intBottom - intTop;
+
+          const eps = 0.005; // ~0.5px tolerance
+          if (
+            visW > eps &&
+            visH > eps &&
+            (visW < w - eps || visH < h - eps || eLeft < cLeft - eps || eTop < cTop - eps)
+          ) {
+            // Image partially outside clipped container: crop to visible intersection
+            imgX = intLeft;
+            imgY = intTop;
+            sizingCrop = {
+              type: 'crop',
+              x: intLeft - eLeft,
+              y: intTop - eTop,
+              w: visW,
+              h: visH,
+            };
+          }
+        }
+      }
+    }
+
     const item = {
       type: 'image',
       zIndex: parentSortKey.concat([0, -1]),
       domOrder,
-      options: { x, y, w, h, rotate: rotation, data: null },
+      options: {
+        x: imgX,
+        y: imgY,
+        w: imgW,
+        h: imgH,
+        rotate: rotation,
+        ...(flipH && { flipH: true }),
+        ...(flipV && { flipV: true }),
+        ...(sizingCrop && { sizing: sizingCrop }),
+        data: null,
+      },
     };
+
+    const imgItems = [item];
+
+    // PptxGenJS addImage does not support borders/lines directly.
+    // If the <img> has a uniform CSS border, pass it on the image item
+    // so pptx-normalizer can inject a native editable picture border (<a:ln>).
+    const imgBorderInfo = getBorderInfo(style, config.scale);
+    if (imgBorderInfo.type === 'uniform') {
+      const minDimension = Math.min(widthPx, heightPx);
+      let rawRadius = parseFloat(style.borderRadius) || 0;
+      const isPercentage = style.borderRadius && style.borderRadius.toString().includes('%');
+      let radiusPx = rawRadius;
+      if (isPercentage) {
+        radiusPx = (rawRadius / 100) * minDimension;
+      }
+      const isSquare = Math.abs(widthPx - heightPx) < 1;
+      const isFullyRound = radiusPx >= minDimension / 2;
+
+      let borderGeom = null;
+      if (isFullyRound && (isPercentage || isSquare)) {
+        borderGeom = 'ellipse';
+      } else if (radiusPx > 0) {
+        borderGeom = 'roundRect';
+      }
+
+      item.borderLine = imgBorderInfo.options;
+      if (borderGeom) {
+        item.prstGeom = borderGeom;
+      }
+    } else if (imgBorderInfo.type === 'composite') {
+      const borderRadiusValue = parseFloat(style.borderRadius) || 0;
+      const borderSvgData = generateCompositeBorderSVG(widthPx, heightPx, borderRadiusValue, imgBorderInfo.sides);
+      if (borderSvgData) {
+        imgItems.push({
+          type: 'image',
+          zIndex: parentSortKey.concat([0, 0]),
+          domOrder,
+          options: {
+            data: borderSvgData,
+            x,
+            y,
+            w,
+            h,
+            rotate: rotation,
+            ...(flipH && { flipH: true }),
+            ...(flipV && { flipV: true }),
+          },
+        });
+      }
+    }
 
     const job = async () => {
       const processed = await getProcessedImage(node.src, widthPx, heightPx, radii, objectFit, objectPosition);
@@ -1747,7 +1919,7 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       else item.skip = true;
     };
 
-    return { items: [item], job, stopRecursion: true };
+    return { items: imgItems, job, stopRecursion: true };
   }
 
   // --- ASYNC JOB: Icons and Other Elements ---
@@ -1756,7 +1928,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       type: 'image',
       zIndex: parentSortKey.concat([0, -1]),
       domOrder,
-      options: { x, y, w, h, rotate: rotation, data: null },
+      options: {
+        x,
+        y,
+        w,
+        h,
+        rotate: rotation,
+        ...(flipH && { flipH: true }),
+        ...(flipV && { flipV: true }),
+        data: null,
+      },
     };
     const job = async () => {
       const pngData = await elementToCanvasImage(node, widthPx, heightPx);
@@ -1794,7 +1975,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       type: 'image',
       zIndex: parentSortKey.concat([-Infinity]),
       domOrder,
-      options: { data: shapeSvg, x, y, w, h, rotate: rotation },
+      options: {
+        data: shapeSvg,
+        x,
+        y,
+        w,
+        h,
+        rotate: rotation,
+        ...(flipH && { flipH: true }),
+        ...(flipV && { flipV: true }),
+      },
     });
   }
 
@@ -1811,7 +2001,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       type: 'image',
       zIndex: parentSortKey.concat([0, -1]),
       domOrder,
-      options: { x, y, w, h, rotate: rotation, data: null },
+      options: {
+        x,
+        y,
+        w,
+        h,
+        rotate: rotation,
+        ...(flipH && { flipH: true }),
+        ...(flipV && { flipV: true }),
+        data: null,
+      },
     };
 
     bgJob = async () => {
@@ -1919,7 +2118,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         type: 'image',
         zIndex: parentSortKey.concat([-Infinity]),
         domOrder,
-        options: { x, y, w, h, rotate: rotation, data: null },
+        options: {
+          x,
+          y,
+          w,
+          h,
+          rotate: rotation,
+          ...(flipH && { flipH: true }),
+          ...(flipV && { flipV: true }),
+          data: null,
+        },
       };
       items.push(bgItem);
 
@@ -1971,6 +2179,8 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
             w: w + padIn * 2,
             h: h + padIn * 2,
             rotate: rotation,
+            ...(flipH && { flipH: true }),
+            ...(flipV && { flipV: true }),
           },
         });
       }
@@ -1990,6 +2200,8 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
           align: textPayload.align,
           valign: textPayload.valign,
           rotate: rotation,
+          ...(flipH && { flipH: true }),
+          ...(flipV && { flipV: true }),
           margin: textPayload.margin,
           wrap: !(style.whiteSpace === 'nowrap' || style.whiteSpace === 'pre'),
           autoFit: true,
@@ -2028,7 +2240,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         type: 'image',
         zIndex: parentSortKey.concat([-Infinity]),
         domOrder,
-        options: { data: shapeSvg, x, y, w, h, rotate: rotation },
+        options: {
+          data: shapeSvg,
+          x,
+          y,
+          w,
+          h,
+          rotate: rotation,
+          ...(flipH && { flipH: true }),
+          ...(flipV && { flipV: true }),
+        },
       });
     } else {
       const shapeOpts = {
@@ -2037,6 +2258,8 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
         w,
         h,
         rotate: rotation,
+        ...(flipH && { flipH: true }),
+        ...(flipV && { flipV: true }),
         ...(useSolidFill && {
           fill: { color: bgColorObj.hex || 'FFFFFF', transparency: transparency },
         }),
@@ -2077,6 +2300,8 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
           w,
           h,
           rotate: rotation,
+          ...(flipH && { flipH: true }),
+          ...(flipV && { flipV: true }),
           align: textPayload.align,
           valign: textPayload.valign,
           margin: textPayload.margin,
@@ -2110,7 +2335,16 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
           type: 'image',
           zIndex: parentSortKey.concat([-500000]),
           domOrder,
-          options: { data: borderSvgData, x, y, w, h, rotate: rotation },
+          options: {
+            data: borderSvgData,
+            x,
+            y,
+            w,
+            h,
+            rotate: rotation,
+            ...(flipH && { flipH: true }),
+            ...(flipV && { flipV: true }),
+          },
         });
       }
     }

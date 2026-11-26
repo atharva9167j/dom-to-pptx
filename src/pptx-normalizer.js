@@ -336,16 +336,62 @@ function sortSpTree(doc) {
       }
 
       if (cNvPr) {
-        const descr = cNvPr.getAttribute('descr') || '';
-        const nameAttr = cNvPr.getAttribute('name') || '';
+        let descr = cNvPr.getAttribute('descr') || '';
+        let nameAttr = cNvPr.getAttribute('name') || '';
         let hasVal = false;
+
+        // Native editable picture border injection (<p:pic><p:spPr><a:ln>)
+        const combined = descr + ' ' + nameAttr;
+        const borderMatch = combined.match(/__b_([0-9a-fA-F]{6})_([0-9.]+)_([a-zA-Z]+)(?:_([a-zA-Z]+))?/);
+        if (borderMatch && el.localName === 'pic') {
+          const color = borderMatch[1];
+          const widthPt = parseFloat(borderMatch[2]);
+          const dashType = borderMatch[3];
+          const geom = borderMatch[4];
+
+          const spPr = Array.from(el.childNodes).find((n) => n.nodeType === 1 && n.localName === 'spPr');
+          if (spPr) {
+            const wEmu = Math.round(widthPt * 12700);
+            const lnXml = `
+              <a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" w="${wEmu}">
+                <a:solidFill>
+                  <a:srgbClr val="${color.toUpperCase()}"/>
+                </a:solidFill>
+                ${dashType && dashType !== 'solid' ? `<a:prstDash val="${dashType}"/>` : ''}
+              </a:ln>
+            `.trim();
+
+            const lnDoc = new DOMParser().parseFromString(lnXml, 'text/xml');
+            const lnNode = doc.importNode(lnDoc.documentElement, true);
+
+            const existingLn = Array.from(spPr.childNodes).find((n) => n.nodeType === 1 && n.localName === 'ln');
+            if (existingLn) {
+              spPr.replaceChild(lnNode, existingLn);
+            } else {
+              const prstGeom = Array.from(spPr.childNodes).find((n) => n.nodeType === 1 && n.localName === 'prstGeom');
+              if (prstGeom) {
+                if (geom && (geom === 'roundRect' || geom === 'ellipse')) {
+                  prstGeom.setAttribute('prst', geom);
+                }
+                prstGeom.insertAdjacentElement('afterend', lnNode);
+              } else {
+                spPr.appendChild(lnNode);
+              }
+            }
+            mutated = true;
+          }
+        }
 
         const descrMatch = descr.match(/^__z_(\d+)__dom_(\d+)(.*)/);
         if (descrMatch) {
           zVal = parseInt(descrMatch[1], 10);
           domVal = parseInt(descrMatch[2], 10);
           hasVal = true;
-          const userText = descrMatch[3].trim();
+          let userText = descrMatch[3].trim();
+          userText = userText
+            .replace(/__type_[a-zA-Z0-9]+/g, '')
+            .replace(/__b_[a-zA-Z0-9._]+/g, '')
+            .trim();
           if (userText) {
             cNvPr.setAttribute('descr', userText);
           } else {
@@ -381,7 +427,8 @@ function sortSpTree(doc) {
             shapeName = `${typePrefix} ${domVal + 1}`;
           } else {
             // Old format: __z_N__dom_N [optional user text]
-            const userText = (nameMatch[3] || '').trim();
+            let userText = (nameMatch[3] || '').trim();
+            userText = userText.replace(/__b_[a-zA-Z0-9._]+/g, '').trim();
             shapeName = userText || `Shape ${domVal + 1}`;
           }
 
