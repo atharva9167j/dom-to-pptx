@@ -1999,7 +1999,7 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
       items.push(...borderItems);
     }
   } else if (
-    (bgColorObj.hex && !isImageWrapper) ||
+    bgColorObj.hex ||
     hasUniformBorder ||
     hasCompositeBorder ||
     hasShadow ||
@@ -2008,7 +2008,7 @@ function prepareRenderItem(node, config, domOrder, pptx, effectiveZIndex, comput
   ) {
     const finalAlpha = safeOpacity * bgColorObj.opacity;
     const transparency = (1 - finalAlpha) * 100;
-    const useSolidFill = (bgColorObj.hex && !isImageWrapper) || customShapeName;
+    const useSolidFill = bgColorObj.hex || customShapeName;
 
     if (hasPartialBorderRadius && useSolidFill && !textPayload && !customShapeName) {
       const shapeSvg = generateCustomShapeSVG(widthPx, heightPx, bgColorObj.hex, bgColorObj.opacity, {
