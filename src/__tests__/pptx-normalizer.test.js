@@ -274,6 +274,53 @@ describe('normalizePptxZip', () => {
     expect(rPr.getAttribute('spc')).toBe('150');
   });
 
+  it('replaces the en-US default with options.lang and drops altLang="en-US"', async () => {
+    const zip = new JSZip();
+    zip.file(
+      '[Content_Types].xml',
+      buildContentTypes({
+        defaults: [{ ext: 'xml', contentType: 'application/xml' }],
+      })
+    );
+    const notesMasterXml = `<?xml version="1.0" encoding="UTF-8"?>
+<p:notesMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:notesStyle>
+    <a:lvl1pPr><a:defRPr lang="en-US" altLang="en-US"/></a:lvl1pPr>
+    <a:lvl2pPr><a:defRPr lang="fr-FR"/></a:lvl2pPr>
+  </p:notesStyle>
+</p:notesMaster>`;
+    zip.file('ppt/notesMasters/notesMaster1.xml', notesMasterXml);
+
+    await normalizePptxZip(zip, { lang: 'de-DE' });
+
+    const normalizedXml = await zip.file('ppt/notesMasters/notesMaster1.xml').async('string');
+    const doc = new DOMParser().parseFromString(normalizedXml, 'text/xml');
+    const [first, second] = doc.getElementsByTagName('a:defRPr');
+    expect(first.getAttribute('lang')).toBe('de-DE');
+    expect(first.hasAttribute('altLang')).toBe(false);
+    expect(second.getAttribute('lang')).toBe('fr-FR');
+  });
+
+  it('leaves languages untouched without options.lang', async () => {
+    const zip = new JSZip();
+    zip.file(
+      '[Content_Types].xml',
+      buildContentTypes({
+        defaults: [{ ext: 'xml', contentType: 'application/xml' }],
+      })
+    );
+    const notesMasterXml = `<?xml version="1.0" encoding="UTF-8"?>
+<p:notesMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:notesStyle><a:lvl1pPr><a:defRPr lang="en-US"/></a:lvl1pPr></p:notesStyle>
+</p:notesMaster>`;
+    zip.file('ppt/notesMasters/notesMaster1.xml', notesMasterXml);
+
+    await normalizePptxZip(zip);
+
+    const normalizedXml = await zip.file('ppt/notesMasters/notesMaster1.xml').async('string');
+    expect(normalizedXml).toContain('lang="en-US"');
+  });
+
   it('sorts visual elements in spTree based on __z_ altText prefix and removes transport prefix', async () => {
     const zip = new JSZip();
     zip.file(

@@ -53,6 +53,7 @@ const PX_TO_INCH = 1 / PPI;
  * @param {boolean} [options.skipDownload=false] - If true, prevents automatic download
  * @param {Object} [options.listConfig] - Config for bullets
  * @param {boolean} [options.svgAsVector=false] - If true, keeps SVG as vector (for Convert to Shape in PowerPoint)
+ * @param {string} [options.lang='en-US'] - Language of the text (e.g. 'de-DE'), used for spell-check
  * @param {boolean} [options.skipNormalize=false] - If true, skips re-zipping with DEFLATE
  *   and stripping dangling [Content_Types].xml Overrides. Leave it false unless you are
  *   debugging the raw PptxGenJS output, otherwise Microsoft PowerPoint may reject the file.
@@ -594,11 +595,19 @@ async function processSlide(root, slide, pptx, globalOptions = {}) {
   });
 
   // 4. Add to Slide
+  const { lang } = globalOptions;
   for (let i = 0; i < finalQueue.length; i++) {
     const item = finalQueue[i];
     const transportVal = `__z_${i}__dom_${item.domOrder}__type_${item.type}`;
     item.options.altText = transportVal;
     item.options.objectName = transportVal;
+
+    // PptxGenJS passes a box's or cell's lang on to all of its text runs
+    if (lang) {
+      if (item.type === 'text') item.options.lang = lang;
+      if (item.type === 'table')
+        item.tableData.rows.forEach((row) => row.forEach((cell) => (cell.options.lang = lang)));
+    }
 
     if (item.type === 'shape') slide.addShape(item.shapeType, item.options);
     if (item.type === 'image') slide.addImage(item.options);
